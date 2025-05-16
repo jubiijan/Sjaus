@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, RefreshCcw, Zap } from 'lucide-react';
+import { Wifi, RefreshCcw, Users } from 'lucide-react';
 import { useGame } from '../../contexts/GameContext';
 
 const MaintenanceNotice: React.FC = () => {
@@ -11,15 +11,28 @@ const MaintenanceNotice: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="bg-[#1E5631]/20 p-2 rounded-full">
-            <Zap className="h-5 w-5 text-[#2D7A47]" />
+            <Wifi 
+              className={`h-5 w-5 ${
+                connectionStatus === 'connected' 
+                  ? 'text-green-500 animate-pulse' 
+                  : 'text-orange-500'
+              }`} 
+            />
           </div>
           <div>
             <h3 className="text-white font-medium flex items-center">
-              <CheckCircle2 className="h-4 w-4 text-green-500 mr-2" />
-              {connectionStatus === 'connected' ? 'Connected to Game Server' : 'Connecting to Server...'}
+              {connectionStatus === 'connected' ? (
+                <>
+                  <span className="text-green-500">●</span>
+                  <span className="ml-2">Game Server Synced and Ready</span>
+                </>
+              ) : (
+                'Establishing Connection...'
+              )}
             </h3>
-            <p className="text-gray-400 text-sm mt-1">
-              {totalOnline} {totalOnline === 1 ? 'player' : 'players'} currently online
+            <p className="text-gray-400 text-sm mt-1 flex items-center">
+              <Users className="h-4 w-4 mr-2" />
+              {totalOnline} {totalOnline === 1 ? 'player' : 'players'} in the game universe
             </p>
           </div>
         </div>
@@ -27,20 +40,16 @@ const MaintenanceNotice: React.FC = () => {
           <RefreshCcw 
             className={`h-4 w-4 ${
               connectionStatus === 'connected' 
-                ? 'text-[#D4AF37]' 
-                : 'text-orange-500'
-            } ${
-              connectionStatus === 'connected' 
-                ? 'animate-spin' 
-                : 'animate-pulse'
+                ? 'text-green-500 animate-spin' 
+                : 'text-orange-500 animate-pulse'
             } mr-2`} 
           />
           <span className={
             connectionStatus === 'connected'
-              ? 'text-[#D4AF37]'
+              ? 'text-green-500'
               : 'text-orange-500'
           }>
-            {connectionStatus === 'connected' ? 'Live' : 'Connecting...'}
+            {connectionStatus === 'connected' ? 'Synchronized' : 'Syncing...'}
           </span>
         </div>
       </div>
