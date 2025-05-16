@@ -236,10 +236,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteAllGames = async (): Promise<void> => {
+    // Delete all games except those with invalid UUIDs
     const { error } = await supabase
       .from('games')
       .delete()
-      .neq('id', '0');
+      .not('id', 'eq', '0')
+      .filter('id', 'neq', null);
 
     if (error) throw error;
     await fetchGames();
