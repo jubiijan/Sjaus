@@ -21,11 +21,12 @@ const GameRoom: React.FC = () => {
     unsubscribeFromGame,
     connectionStatus,
     isLoading,
-    error
+    error: gameError,
+    fetchGames
   } = useGame();
   const navigate = useNavigate();
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [joinAttempted, setJoinAttempted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const game = games.find(g => g.id === roomId);
 
@@ -33,54 +34,68 @@ const GameRoom: React.FC = () => {
   const shareTitle = game ? `Join me for a game of Sjaus - ${game.name}` : 'Join my Sjaus game';
   const shareDescription = 'Play Sjaus, the traditional Faeroese card game, online with friends!';
 
-  // Subscribe to the specific game and attempt to join
+  // Subscribe to game updates and join game
   useEffect(() => {
-    if (roomId && currentUser && !joinAttempted) {
-      // Set up game-specific subscription
-      subscribeToGame(roomId);
-      // Attempt to join the game
-      joinGame(roomId, currentUser.id)
-        .catch(err => console.error("Failed to join game:", err))
-        .finally(() => setJoinAttempted(true));
-      
-      // Clean up subscription when leaving
-      return () => {
-        unsubscribeFromGame(roomId);
-      };
-    }
-  }, [roomId, currentUser, joinAttempted, subscribeToGame, unsubscribeFromGame, joinGame]);
+    if (!roomId || !currentUser) return;
 
-  const handleLeaveGame = () => {
-    if (roomId && currentUser) {
-      leaveGame(roomId, currentUser.id)
-        .then(() => {
-          navigate('/lobby');
-        })
-        .catch(error => {
-          console.error('Error leaving game:', error);
-          // Still navigate away even if there was an error
-          navigate('/lobby');
-        });
-    }
-  };
+    const initializeGame = async () => {
+      try {
+        // Set up subscription first
+        subscribeToGame(roomId);
+        
+        // Attempt to join the game
+        await joinGame(roomId, currentUser.id);
+        
+        // Fetch latest game state
+        await fetchGames();
+      } catch (err) {
+        console.error('Error initializing game:', err);
+        setError(err instanceof Error ? err.message : 'Failed to join game');
+      }
+    };
 
-  const handleDeleteGame = () => {
-    if (roomId && isAdmin) {
-      deleteGame(roomId)
-        .then(() => {
-          navigate('/lobby');
-        })
-        .catch(error => {
-          console.error('Error deleting game:', error);
-          // Still navigate away even if there was an error
-          navigate('/lobby');
-        });
+    initializeGame();
+
+    // Cleanup subscription when component unmounts
+    return () => {
+      unsubscribeFromGame(roomId);
+    };
+  }, [roomId, currentUser, subscribeToGame, unsubscribeFromGame, joinGame, fetchGames]);
+
+  const handleLeaveGame = async () => {
+    if (!roomId || !currentUser) return;
+    
+    try {
+      await leaveGame(roomId, currentUser.id);
+      navigate('/lobby');
+    } catch (err) {
+      console.error('Error leaving game:', err);
+      // Still navigate away even if there was an error
+      navigate('/lobby');
     }
   };
 
-  const handleStartGame = () => {
-    if (roomId) {
-      startGame(roomId).catch(err => console.error("Failed to start game:", err));
+  const handleDeleteGame = async () => {
+    if (!roomId || !isAdmin) return;
+    
+    try {
+      await deleteGame(roomId);
+      navigate('/lobby');
+    } catch (err) {
+      console.error('Error deleting game:', err);
+      // Still navigate away even if there was an error
+      navigate('/lobby');
+    }
+  };
+
+  const handleStartGame = async () => {
+    if (!roomId) return;
+    
+    try {
+      await startGame(roomId);
+    } catch (err) {
+      console.error('Error starting game:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start game');
     }
   };
 
@@ -109,13 +124,13 @@ const GameRoom: React.FC = () => {
   }
 
   // Error state
-  if (error && !game) {
+  if ((error || gameError) && !game) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-[#0F172A]">
         <div className="text-center max-w-md">
           <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-4">Error Loading Game</h2>
-          <p className="text-gray-300 mb-6">{error}</p>
+          <p className="text-gray-300 mb-6">{error || gameError}</p>
           <button
             onClick={() => navigate('/lobby')}
             className="bg-[#1E5631] hover:bg-[#2D7A47] text-white font-bold py-2 px-4 rounded-lg"
@@ -188,6 +203,7 @@ const GameRoom: React.FC = () => {
   };
 
   const variantInfo = getVariantDetails(game.variant);
+  const activePlayers = game.players?.filter(p => !p.left) || [];
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#0F172A] py-4">
@@ -238,9 +254,9 @@ const GameRoom: React.FC = () => {
             {isWaiting && isCreator && (
               <button
                 onClick={handleStartGame}
-                disabled={!game.players || game.players.filter(p => !p.left).length < 2}
+                disabled={activePlayers.length < 2}
                 className={`px-4 py-2 rounded-lg font-semibold flex items-center ${
-                  game.players && game.players.filter(p => !p.left).length >= 2
+                  activePlayers.length >= 2
                     ? 'bg-[#D4AF37] hover:bg-[#E9C85D] text-[#0F172A]'
                     : 'bg-gray-700 text-gray-500 cursor-not-allowed'
                 }`}
@@ -252,6 +268,12 @@ const GameRoom: React.FC = () => {
           </div>
         </div>
         
+        {error && (
+          <div className="mb-6 bg-red-500 bg-opacity-10 border border-red-500 rounded-lg p-4">
+            <p className="text-red-500">{error}</p>
+          </div>
+        )}
+
         {hasLeft && (
           <div className="bg-red-500 bg-opacity-10 border border-red-500 text-red-500 px-4 py-3 rounded-lg mb-6">
             <p>You have left this game. Other players can continue playing.</p>
@@ -323,15 +345,14 @@ const GameRoom: React.FC = () => {
               <div>
                 <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
                   <Users className="h-7 w-7 text-[#D4AF37] mr-3" />
-                  Players ({game.players?.filter(p => !p.left).length || 0}/{variantInfo.players})
+                  Players ({activePlayers.length}/{variantInfo.players})
                 </h2>
                 <div className="space-y-4">
-                  {game.players?.filter(p => !p.left).map((player) => (
+                  {activePlayers.map((player) => (
                     <div 
                       key={player.id} 
                       className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] rounded-lg p-6 border border-[#334155] transform transition-all duration-300 hover:scale-[1.02] hover:border-[#D4AF37]/50"
                     >
-                      
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
                           <div 
@@ -358,7 +379,7 @@ const GameRoom: React.FC = () => {
                   ))}
                   
                   {/* Empty slots */}
-                  {Array.from({ length: variantInfo.players - (game.players?.filter(p => !p.left).length || 0) }).map((_, i) => (
+                  {Array.from({ length: variantInfo.players - activePlayers.length }).map((_, i) => (
                     <div 
                       key={`empty-${i}`} 
                       className="bg-[#0F172A]/50 rounded-lg p-6 flex items-center border border-dashed border-gray-700"
@@ -374,7 +395,7 @@ const GameRoom: React.FC = () => {
                   ))}
                 </div>
 
-                {isCreator && game.players?.filter(p => !p.left).length < 2 && (
+                {isCreator && activePlayers.length < 2 && (
                   <div className="mt-6 bg-gradient-to-r from-[#D4AF37]/10 to-[#E9C85D]/10 rounded-lg p-6 border border-[#D4AF37]/20">
                     <div className="flex items-center text-[#D4AF37]">
                       <AlertTriangle className="h-5 w-5 mr-2" />
