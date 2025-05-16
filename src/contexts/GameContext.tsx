@@ -347,7 +347,3 @@ export const useGame = () => {
   }
   return context;
 };
-
-export { GameProvider }
-
-export { useGame }
