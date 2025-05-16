@@ -111,151 +111,93 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createGame = async (variant: GameVariant, name: string): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
 
-    const newGame: Partial<Game> = {
-      variant,
-      name,
-      created_by: currentUser.id,
-      players: [currentUser.id],
-      state: GameState.WAITING,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      messages: [],
-      score: { team1: 24, team2: 24 }
-    };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
 
-    const { data, error } = await supabase
-      .from('games')
-      .insert([newGame])
-      .select()
-      .single();
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'create',
+        userId: currentUser.id,
+        name,
+        variant
+      })
+    });
 
-    if (error) throw error;
-    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create game');
+    }
+
+    const game = await response.json();
     await fetchGames();
-    return data.id;
+    return game.id;
   };
 
   const joinGame = async (gameId: string): Promise<void> => {
     if (!currentUser) throw new Error('User must be logged in to join a game');
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      operationTimeoutRef.current = setTimeout(() => {
-        reject(new Error('Game joining timed out'));
-      }, OPERATION_TIMEOUT);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'join',
+        gameId,
+        userId: currentUser.id
+      })
     });
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const { data: game, error: fetchError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!game) throw new Error('Game not found');
-
-      const gameData = game as Game;
-      const newPlayer = currentUser.id;
-      let updatedPlayers = [];
-      
-      if (gameData.players && Array.isArray(gameData.players)) {
-        if (gameData.players.includes(currentUser.id)) {
-          updatedPlayers = gameData.players;
-        } else {
-          updatedPlayers = [...gameData.players, newPlayer];
-        }
-      } else {
-        updatedPlayers = [newPlayer];
-      }
-      
-      const updateOperation = supabase
-        .from('games')
-        .update({ players: updatedPlayers })
-        .eq('id', gameId);
-        
-      const { error: updateError } = await Promise.race([updateOperation, timeoutPromise]);
-
-      if (updateError) throw updateError;
-      
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      subscribeToGame(gameId);
-      
-      setCurrentGame({
-        ...gameData,
-        players: updatedPlayers
-      });
-      
-      await fetchGames();
-    } catch (error) {
-      console.error('Error joining game:', error);
-      
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      if (error instanceof Error) {
-        if (error.message.includes('timed out')) {
-          setError('Joining the game is taking longer than expected. Please try again.');
-        } else if (error.message.includes('not found')) {
-          setError('The game you tried to join no longer exists.');
-        } else {
-          setError('Failed to join game. Please try again.');
-        }
-      } else {
-        setError('Failed to join game. Please try again.');
-      }
-      
-      throw error;
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to join game');
     }
+
+    subscribeToGame(gameId);
+    await fetchGames();
   };
 
   const leaveGame = async (gameId: string): Promise<void> => {
     if (!currentUser) throw new Error('User must be logged in to leave a game');
 
-    try {
-      setIsLoading(true);
-      setError(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
 
-      const { data: game, error: fetchError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'leave',
+        gameId,
+        userId: currentUser.id
+      })
+    });
 
-      if (fetchError) throw fetchError;
-
-      const updatedPlayers = game.players.filter(playerId => playerId !== currentUser.id);
-
-      const { error: updateError } = await supabase
-        .from('games')
-        .update({ players: updatedPlayers })
-        .eq('id', gameId);
-
-      if (updateError) throw updateError;
-
-      unsubscribeFromGame(gameId);
-      setCurrentGame(null);
-      await fetchGames();
-    } catch (error) {
-      console.error('Error leaving game:', error);
-      setError('Failed to leave game. Please try again.');
-      throw error;
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to leave game');
     }
+
+    unsubscribeFromGame(gameId);
+    setCurrentGame(null);
+    await fetchGames();
   };
 
   const fetchGames = async (): Promise<void> => {
+    if (!currentUser) return;
+
     const now = Date.now();
     if (now - lastFetchTime.current < 1000) {
       if (!fetchQueue.current) {
@@ -271,23 +213,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     lastFetchTime.current = now;
     setIsLoading(true);
-    setError(null);
 
     try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
 
-      if (error) throw error;
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get',
+          userId: currentUser.id
+        })
+      });
 
-      setGames(data || []);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch games');
+      }
+
+      const games = await response.json();
+      setGames(games);
+      
       if (currentGame) {
-        const updatedCurrentGame = data.find(game => game.id === currentGame.id);
+        const updatedCurrentGame = games.find(game => game.id === currentGame.id);
         setCurrentGame(updatedCurrentGame || null);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred while fetching games');
+    } catch (error) {
+      console.error('Error fetching games:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch games');
     } finally {
       setIsLoading(false);
     }
@@ -325,87 +282,112 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteGame = async (gameId: string): Promise<void> => {
-    const { error } = await supabase
-      .from('games')
-      .delete()
-      .eq('id', gameId);
+    if (!currentUser) throw new Error('User must be logged in to delete a game');
 
-    if (error) throw error;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        gameId,
+        userId: currentUser.id
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete game');
+    }
+
     await fetchGames();
   };
 
   const deleteAllGames = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+    if (!currentUser) throw new Error('User must be logged in to delete games');
 
-      const { error: updateError } = await supabase
-        .from('games')
-        .update({ 
-          deleted: true,
-          deleted_at: new Date().toISOString(),
-          state: GameState.COMPLETE
-        })
-        .eq('state', 'waiting');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
 
-      if (updateError) throw updateError;
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'deleteAll',
+        userId: currentUser.id
+      })
+    });
 
-      await fetchGames();
-    } catch (error) {
-      console.error('Error deleting all games:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete all games');
     }
+
+    await fetchGames();
   };
 
   const startGame = async (gameId: string): Promise<void> => {
-    const { error } = await supabase
-      .from('games')
-      .update({ state: GameState.IN_PROGRESS })
-      .eq('id', gameId);
+    if (!currentUser) throw new Error('User must be logged in to start a game');
 
-    if (error) throw error;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'start',
+        gameId,
+        userId: currentUser.id
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start game');
+    }
+
     await fetchGames();
   };
 
   const sendMessage = async (gameId: string, text: string): Promise<void> => {
     if (!currentUser) throw new Error('User must be logged in to send messages');
 
-    const { data: game, error: fetchError } = await supabase
-      .from('games')
-      .select('*')
-      .eq('id', gameId)
-      .single();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
 
-    if (fetchError) throw fetchError;
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'sendMessage',
+        gameId,
+        userId: currentUser.id,
+        text
+      })
+    });
 
-    const newMessage = {
-      id: crypto.randomUUID(),
-      playerId: currentUser.id,
-      playerName: currentUser.name,
-      text,
-      timestamp: new Date().toISOString()
-    };
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to send message');
+    }
 
-    const updatedMessages = [...(game.messages || []), newMessage];
-    const { error: updateError } = await supabase
-      .from('games')
-      .update({ messages: updatedMessages })
-      .eq('id', gameId);
-
-    if (updateError) throw updateError;
     await fetchGames();
   };
-
-  useEffect(() => {
-    fetchGames();
-    return () => {
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const value = {
     games,
