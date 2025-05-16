@@ -71,7 +71,7 @@ const Lobby: React.FC = () => {
   // Filter games to show both waiting and in-progress games where the user is a player
   const availableGames = (games || []).filter(game => 
     game.state === 'waiting' || 
-    (Array.isArray(game.players) && game.players.some(p => p.id === currentUser.id))
+    (game.players && game.players.some(p => p.id === currentUser.id))
   );
 
   return (
