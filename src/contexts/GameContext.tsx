@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Game, GameState, GameVariant, Player, Card, Trick } from '../types/Game';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { Game, GameState, GameVariant } from '../types/Game';
 import { supabase } from '../lib/supabase';
 import { AuthContext } from './AuthContext';
 
@@ -30,6 +30,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const { currentUser } = useContext(AuthContext);
+  
+  // Keep track of active subscriptions
+  const activeSubscriptions = useRef<Record<string, boolean>>({});
+  const lastFetchTime = useRef<number>(0);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const debouncedFetch = () => {
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+    
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTime.current;
+    
+    if (timeSinceLastFetch < 1000) {
+      fetchTimeoutRef.current = setTimeout(() => {
+        fetchGames();
+      }, 1000 - timeSinceLastFetch);
+      return;
+    }
+    
+    fetchGames();
+  };
 
   const fetchGames = async () => {
     try {
@@ -95,6 +118,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })) || [];
 
       setGames(transformedGames);
+      lastFetchTime.current = Date.now();
       setError(null);
     } catch (error) {
       console.error('Error fetching games:', error);
@@ -105,46 +129,42 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const subscribeToGame = (gameId: string) => {
-    if (!supabase) return;
+    if (!supabase || activeSubscriptions.current[gameId]) return;
 
     const channel = supabase.channel(`game:${gameId}`)
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        async (payload) => {
-          console.log('Game change detected:', payload);
-          await fetchGames();
-        }
+        () => debouncedFetch()
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_players', filter: `game_id=eq.${gameId}` },
-        async () => {
-          console.log('Game players change detected');
-          await fetchGames();
-        }
+        () => debouncedFetch()
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_messages', filter: `game_id=eq.${gameId}` },
-        async () => {
-          console.log('Game messages change detected');
-          await fetchGames();
-        }
+        () => debouncedFetch()
       )
       .subscribe(status => {
-        console.log('Subscription status:', status);
+        console.log(`Game ${gameId} subscription status:`, status);
         setConnectionStatus(status === 'SUBSCRIBED' ? 'connected' : 'disconnected');
 
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          console.log('Subscription closed or errored, retrying in 5s...');
+          console.log(`Game ${gameId} subscription closed or errored, retrying in 5s...`);
           setTimeout(() => {
-            channel.subscribe();
+            delete activeSubscriptions.current[gameId];
+            subscribeToGame(gameId);
           }, 5000);
+        } else if (status === 'SUBSCRIBED') {
+          activeSubscriptions.current[gameId] = true;
         }
       });
   };
 
   const unsubscribeFromGame = (gameId: string) => {
-    if (!supabase) return;
+    if (!supabase || !activeSubscriptions.current[gameId]) return;
+
     supabase.channel(`game:${gameId}`).unsubscribe();
+    delete activeSubscriptions.current[gameId];
     setConnectionStatus('disconnected');
   };
 
@@ -156,6 +176,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentGame(null);
       setIsLoading(false);
     }
+
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
   }, [currentUser?.id]);
 
   const createGame = async (variant: GameVariant, name: string): Promise<string> => {
