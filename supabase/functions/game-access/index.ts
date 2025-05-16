@@ -31,6 +31,16 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
+    // Check if user is admin
+    const { data: userData, error: userDataError } = await supabaseClient
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (userDataError) throw userDataError;
+    const isAdmin = userData.role === 'admin';
+
     switch (action) {
       case 'get': {
         // Get all active games
@@ -120,7 +130,8 @@ Deno.serve(async (req) => {
           .eq('id', gameId)
           .single();
 
-        if (gameError || !game) throw new Error('Game not found');
+        if (gameError) throw gameError;
+        if (!game) throw new Error('Game not found');
         if (game.state !== 'waiting') throw new Error('Game is not accepting new players');
 
         // Check if player is already in the game
@@ -160,6 +171,50 @@ Deno.serve(async (req) => {
           .match({ game_id: gameId, user_id: userId });
 
         if (leaveError) throw leaveError;
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'delete': {
+        // Check if user is admin or game creator
+        const { data: game, error: gameError } = await supabaseClient
+          .from('games')
+          .select('created_by')
+          .eq('id', gameId)
+          .single();
+
+        if (gameError) throw gameError;
+
+        if (!isAdmin && game.created_by !== userId) {
+          throw new Error('Only game creators or admins can delete games');
+        }
+
+        const { error: deleteError } = await supabaseClient
+          .from('games')
+          .update({ deleted: true, deleted_at: new Date().toISOString() })
+          .eq('id', gameId);
+
+        if (deleteError) throw deleteError;
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'deleteAll': {
+        // Only admins can delete all games
+        if (!isAdmin) {
+          throw new Error('Only admins can delete all games');
+        }
+
+        const { error: deleteError } = await supabaseClient
+          .from('games')
+          .update({ deleted: true, deleted_at: new Date().toISOString() })
+          .eq('state', 'waiting');
+
+        if (deleteError) throw deleteError;
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

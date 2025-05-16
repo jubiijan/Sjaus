@@ -566,5 +566,3 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </GameContext.Provider>
   );
 };
-
-export { GameContext };
