@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { GameVariant } from '../types/Game';
-import SystemStatusNotice from '../components/lobby/SystemStatusNotice';
-import SyncNotice from '../components/lobby/SyncNotice';
+import MaintenanceNotice from '../components/lobby/MaintenanceNotice';
 import GameList from '../components/lobby/GameList';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 const Lobby: React.FC = () => {
   const { currentUser, isAdmin } = useAuth();
-  const { games = [], createGame, joinGame, startGame, deleteGame, isLoading, error, fetchGames } = useGame();
+  const { games = [], createGame, joinGame, startGame, deleteGame, isLoading, error, fetchGames, connectionStatus } = useGame();
   const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newGameName, setNewGameName] = useState('');
@@ -82,7 +81,7 @@ const Lobby: React.FC = () => {
           <div className="flex gap-4">
             <button
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isRefreshing || connectionStatus === 'disconnected'}
               className="bg-[#334155] hover:bg-[#475569] text-white font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 disabled:opacity-50"
             >
               <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -102,8 +101,7 @@ const Lobby: React.FC = () => {
           </div>
         )}
 
-        <SyncNotice />
-        <SystemStatusNotice />
+        <MaintenanceNotice />
 
         {isLoading && games.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
