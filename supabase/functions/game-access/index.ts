@@ -116,12 +116,27 @@ Deno.serve(async (req) => {
         // Check if game exists and is in waiting state
         const { data: game, error: gameError } = await supabaseClient
           .from('games')
-          .select('*')
+          .select('*, game_players(user_id)')
           .eq('id', gameId)
           .single();
 
         if (gameError || !game) throw new Error('Game not found');
         if (game.state !== 'waiting') throw new Error('Game is not accepting new players');
+
+        // Check if player is already in the game
+        const existingPlayer = game.game_players.find(p => p.user_id === userId);
+        if (existingPlayer) {
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Check if game is full
+        const maxPlayers = game.variant === 'four-player' ? 4 : 
+                         game.variant === 'three-player' ? 3 : 2;
+        if (game.game_players.length >= maxPlayers) {
+          throw new Error('Game is full');
+        }
 
         // Add player to game
         const { error: joinError } = await supabaseClient
