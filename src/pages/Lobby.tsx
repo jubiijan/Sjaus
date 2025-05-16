@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { GameVariant } from '../types/Game';
-import MaintenanceNotice from '../components/lobby/MaintenanceNotice';
 import GameList from '../components/lobby/GameList';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
@@ -100,8 +99,6 @@ const Lobby: React.FC = () => {
             <p className="text-red-500">{error}</p>
           </div>
         )}
-
-        <MaintenanceNotice />
 
         {isLoading && games.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
