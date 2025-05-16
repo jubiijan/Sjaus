@@ -1,0 +1,310 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary: #1E5631;
+  --primary-light: #2D7A47;
+  --primary-dark: #0D3A1F;
+  --secondary: #8B4513;
+  --secondary-light: #A65C2E;
+  --secondary-dark: #6A340F;
+  --accent: #D4AF37;
+  --accent-light: #E9C85D;
+  --accent-dark: #BF9B2F;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --background: #0F172A;
+  --surface: #1E293B;
+  --text: #F8FAFC;
+  --text-secondary: #CBD5E1;
+}
+
+/* Base styles */
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--background);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cinzel', serif;
+}
+
+/* Mobile-first media queries */
+@media (max-width: 640px) {
+  h1 { font-size: 1.875rem; line-height: 2.25rem; }
+  h2 { font-size: 1.5rem; line-height: 2rem; }
+  h3 { font-size: 1.25rem; line-height: 1.75rem; }
+}
+
+/* Touch device optimizations */
+@media (hover: none) {
+  .card:hover {
+    transform: none;
+  }
+  
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-accent:hover {
+    transform: none;
+  }
+}
+
+/* Enhanced background effects */
+.parallax-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transform: translateZ(0);
+  will-change: transform;
+  transition: transform 0.3s ease-out;
+}
+
+.parallax-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(15, 23, 42, 0.5) 0%,
+    rgba(15, 23, 42, 0.7) 100%
+  );
+  backdrop-filter: blur(2px);
+  transition: backdrop-filter 0.3s ease-out;
+}
+
+@media (hover: hover) {
+  .parallax-bg:hover {
+    transform: scale(1.02);
+  }
+
+  .parallax-bg:hover::after {
+    backdrop-filter: blur(1px);
+  }
+}
+
+/* Glass effect */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+@supports not (backdrop-filter: blur(8px)) {
+  .glass-panel {
+    background: rgba(30, 41, 59, 0.9);
+  }
+}
+
+/* Enhanced card styles */
+.card {
+  perspective: 1000px;
+  transition: transform 0.3s ease-out;
+  touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  .card:hover {
+    transform: translateY(-5px);
+  }
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-front, .card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+  background-image: url('https://images.pexels.com/photos/2909078/pexels-photo-2909078.jpeg');
+  background-size: cover;
+  background-position: center;
+  border: 2px solid var(--accent);
+}
+
+/* Game table responsiveness */
+.game-table {
+  background: radial-gradient(ellipse at center, #1E5631 0%, #0D3A1F 100%);
+  border: 15px solid var(--secondary);
+  border-radius: 100px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3), inset 0 0 50px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.3s ease-out;
+}
+
+@media (max-width: 640px) {
+  .game-table {
+    border-width: 8px;
+    border-radius: 50px;
+  }
+}
+
+/* Enhanced button styles with touch feedback */
+.btn-primary,
+.btn-secondary,
+.btn-accent {
+  @apply font-bold py-2 px-4 rounded-lg transition-all duration-200;
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-accent:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.btn-primary:active,
+.btn-secondary:active,
+.btn-accent:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile-optimized animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s ease-out;
+}
+
+/* Safe area insets for modern mobile devices */
+.safe-area-inset {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Responsive grid layouts */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .responsive-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Touch-friendly form elements */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  font-size: 16px; /* Prevents iOS zoom */
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Loading states */
+.loading-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.1)
+  );
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Responsive typography */
+.text-responsive {
+  font-size: clamp(1rem, 4vw, 1.5rem);
+}
+
+.heading-responsive {
+  font-size: clamp(1.5rem, 6vw, 3rem);
+}
+
+/* Mobile navigation */
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  padding: 0.5rem;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 50;
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .mobile-nav {
+    display: flex;
+  }
+}
+
+/* Prevent pull-to-refresh on iOS */
+html {
+  overscroll-behavior-y: none;
+  height: 100%;
+}
+
+/* Fix 100vh issues on mobile */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Fix sticky hover on mobile */
+@media (hover: hover) {
+  .hover-effect:hover {
+    opacity: 0.8;
+  }
+}
