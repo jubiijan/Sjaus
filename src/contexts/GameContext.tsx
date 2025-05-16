@@ -568,3 +568,5 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export { GameContext };
+export { GameProvider };
+export { useGame };
