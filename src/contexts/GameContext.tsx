@@ -42,6 +42,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const lastFetchTime = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fetchQueue = useRef<boolean>(false);
+  const autoRefreshInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Set up presence channel
   useEffect(() => {
@@ -71,10 +72,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     presenceChannel.current = channel;
 
+    // Set up auto-refresh interval (every 5 seconds)
+    autoRefreshInterval.current = setInterval(() => {
+      fetchGames();
+    }, 5000);
+
     return () => {
       if (presenceChannel.current) {
         presenceChannel.current.unsubscribe();
         presenceChannel.current = null;
+      }
+      if (autoRefreshInterval.current) {
+        clearInterval(autoRefreshInterval.current);
+        autoRefreshInterval.current = null;
       }
     };
   }, [currentUser]);
