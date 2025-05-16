@@ -1,804 +1,378 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Game, GameState, GameVariant, Player } from '../types/Game';
-import { useAuth } from './AuthContext';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User } from '../types/User';
 import { supabase } from '../lib/supabase';
-import { RealtimeChannel } from '@supabase/supabase-js';
 
-interface GameContextType {
-  games: Game[];
-  currentGame: Game | null;
+interface AuthContextType {
+  currentUser: User | null;
   isLoading: boolean;
+  isAdmin: boolean;
   error: string | null;
-  connectionStatus: 'connected' | 'disconnected' | 'connecting';
-  onlinePlayers: Record<string, { user_id: string; username: string; online_at: string }[]>;
-  createGame: (variant: GameVariant, name: string) => Promise<string>;
-  joinGame: (gameId: string) => Promise<void>;
-  leaveGame: (gameId: string) => Promise<void>;
-  fetchGames: () => Promise<void>;
-  fetchGameById: (gameId: string) => Promise<Game | null>;
-  subscribeToGame: (gameId: string) => void;
-  unsubscribeFromGame: (gameId: string) => void;
-  deleteGame: (gameId: string) => Promise<void>;
-  deleteAllGames: () => Promise<void>;
-  startGame: (gameId: string) => Promise<void>;
-  sendMessage: (gameId: string, playerId: string, text: string) => Promise<void>;
-  reconnect: () => Promise<void>;
+  users: User[];
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  updateUser: (userId: string, data: Partial<User>) => Promise<void>;
+  deleteUser: (userId: string) => Promise<{ success: boolean; error?: string }>;
+  banUser: (userId: string) => Promise<void>;
+  unbanUser: (userId: string) => Promise<void>;
+  updateProfile: (data: Partial<User>) => Promise<void>;
 }
 
-const GameContext = createContext<GameContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Operation timeout constant
-const OPERATION_TIMEOUT = 20000; // 20 seconds
-
-export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [games, setGames] = useState<Game[]>([]);
-  const [currentGame, setCurrentGame] = useState<Game | null>(null);
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
-  const [onlinePlayers, setOnlinePlayers] = useState<Record<string, { user_id: string; username: string; online_at: string }[]>>({});
-  
-  const { currentUser } = useAuth();
-  
-  const gamesChannel = useRef<RealtimeChannel | null>(null);
-  const gameSpecificChannels = useRef<Record<string, RealtimeChannel>>({});
-  const presenceChannel = useRef<RealtimeChannel | null>(null);
-  const lastFetchTime = useRef<number>(0);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const fetchQueue = useRef<boolean>(false);
-  const autoRefreshInterval = useRef<NodeJS.Timeout | null>(null);
-  const connectionCheckInterval = useRef<NodeJS.Timeout | null>(null);
-  const operationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttempts = useRef<number>(0);
+  const [users, setUsers] = useState<User[]>([]);
 
-  // Clean up timeouts when component unmounts
+  // Fetch all users when admin status changes
   useEffect(() => {
-    return () => {
-      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-      if (autoRefreshInterval.current) clearInterval(autoRefreshInterval.current);
-      if (connectionCheckInterval.current) clearInterval(connectionCheckInterval.current);
-      if (operationTimeoutRef.current) clearTimeout(operationTimeoutRef.current);
-    };
-  }, []);
+    if (isAdmin) {
+      fetchAllUsers();
+    } else {
+      setUsers([]);
+    }
+  }, [isAdmin]);
 
-  useEffect(() => {
-    if (!currentUser) return;
-
-    // Set initial connection status
-    setConnectionStatus('connecting');
-    console.log('Initializing game connection');
-
-    // Initialize realtime connection
-    initializeRealtimeConnection();
-
-    // Set up connection check interval
-    connectionCheckInterval.current = setInterval(() => {
-      checkConnectionStatus();
-    }, 15000); // Check every 15 seconds
-
-    // Set up auto-refresh for games
-    autoRefreshInterval.current = setInterval(() => {
-      if (connectionStatus === 'connected') {
-        fetchGames().catch(err => {
-          console.error('Auto-refresh error:', err);
-        });
-      }
-    }, 10000); // Refresh every 10 seconds when connected
-
-    // Initial games fetch
-    fetchGames().catch(err => {
-      console.error('Initial games fetch error:', err);
-    });
-
-    return () => {
-      // Clean up realtime connections
-      cleanupRealtimeConnection();
-      
-      // Clean up intervals
-      if (connectionCheckInterval.current) {
-        clearInterval(connectionCheckInterval.current);
-        connectionCheckInterval.current = null;
-      }
-      if (autoRefreshInterval.current) {
-        clearInterval(autoRefreshInterval.current);
-        autoRefreshInterval.current = null;
-      }
-    };
-  }, [currentUser]);
-
-  const initializeRealtimeConnection = () => {
-    if (!currentUser) return;
-
+  const fetchAllUsers = async () => {
     try {
-      console.log('Setting up realtime connection');
-      
-      // Set up presence channel for online players
-      const channel = supabase.channel('lobby')
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState();
-          setOnlinePlayers(state);
-          console.log('Presence synced, online players:', Object.keys(state).length);
-        })
-        .on('presence', { event: 'join' }, ({ newPresences }) => {
-          console.log('Users joined:', newPresences.length);
-        })
-        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-          console.log('Users left:', leftPresences.length);
-        });
-
-      channel.subscribe(async (status) => {
-        console.log('Lobby channel status:', status);
-        if (status === 'SUBSCRIBED') {
-          setConnectionStatus('connected');
-          reconnectAttempts.current = 0;
-          
-          await channel.track({
-            user_id: currentUser.id,
-            username: currentUser.name,
-            online_at: new Date().toISOString()
-          });
-          
-          console.log('Successfully tracked user presence');
-        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
-          setConnectionStatus('disconnected');
-          console.error('Channel subscription failed:', status);
-        }
-      });
-
-      presenceChannel.current = channel;
-      
-      // Set up games channel for global game updates
-      const gamesChannelInstance = supabase.channel('games-global')
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'games'
-        }, async (payload) => {
-          console.log('Game change detected:', payload.eventType);
-          await fetchGames();
-        })
-        .subscribe((status) => {
-          console.log('Games channel status:', status);
-          if (status === 'SUBSCRIBED') {
-            console.log('Successfully subscribed to games updates');
-          }
-        });
-        
-      gamesChannel.current = gamesChannelInstance;
-      
-    } catch (error) {
-      console.error('Error setting up realtime connection:', error);
-      setConnectionStatus('disconnected');
-    }
-  };
-
-  const cleanupRealtimeConnection = () => {
-    console.log('Cleaning up realtime connections');
-    
-    // Unsubscribe from presence channel
-    if (presenceChannel.current) {
-      presenceChannel.current.unsubscribe();
-      presenceChannel.current = null;
-    }
-    
-    // Unsubscribe from games channel
-    if (gamesChannel.current) {
-      gamesChannel.current.unsubscribe();
-      gamesChannel.current = null;
-    }
-    
-    // Unsubscribe from game-specific channels
-    Object.values(gameSpecificChannels.current).forEach(channel => {
-      channel.unsubscribe();
-    });
-    gameSpecificChannels.current = {};
-  };
-
-  const checkConnectionStatus = async () => {
-    // If we're already marked as connected, check if channels are actually working
-    if (connectionStatus === 'connected') {
-      const presenceState = presenceChannel.current?.presenceState();
-      
-      // If we can't get presence state, we might be disconnected
-      if (!presenceState || Object.keys(presenceState).length === 0) {
-        console.log('Connection check failed, marking as disconnected');
-        setConnectionStatus('disconnected');
-        
-        // Try to reconnect automatically
-        await reconnect();
-      }
-    } else if (connectionStatus === 'disconnected') {
-      // If we're disconnected, try to reconnect automatically
-      await reconnect();
-    }
-  };
-
-  const reconnect = async () => {
-    if (reconnectAttempts.current >= 5) {
-      console.log('Max reconnection attempts reached, waiting for user interaction');
-      return;
-    }
-    
-    reconnectAttempts.current++;
-    console.log(`Reconnection attempt ${reconnectAttempts.current}/5`);
-    
-    try {
-      setConnectionStatus('connecting');
-      
-      // Clean up existing connections
-      cleanupRealtimeConnection();
-      
-      // Wait a moment before reconnecting
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Set up connections again
-      initializeRealtimeConnection();
-      
-      // Refresh games
-      await fetchGames();
-      
-      console.log('Reconnection successful');
-    } catch (error) {
-      console.error('Reconnection failed:', error);
-      setConnectionStatus('disconnected');
-    }
-  };
-
-  const createGame = async (variant: GameVariant, name: string): Promise<string> => {
-    console.log('Creating game:', name, variant);
-    
-    if (!currentUser) throw new Error('User must be logged in to create a game');
-
-    // Set up operation timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      operationTimeoutRef.current = setTimeout(() => {
-        reject(new Error('Game creation timed out'));
-      }, OPERATION_TIMEOUT);
-    });
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Prepare a player object for the current user
-      const currentPlayer: Player = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-        hand: [],
-        tricks: [],
-        currentBid: null
-      };
-
-      const newGame: Partial<Game> = {
-        variant,
-        name,
-        created_by: currentUser.id,
-        players: [currentPlayer],
-        state: GameState.WAITING,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        messages: [],
-        currentTrick: [],
-        tricks: [],
-        trumpSuit: null,
-        trumpDeclarer: null,
-        trumpLength: 0,
-        score: { team1: 24, team2: 24 }
-      };
-
-      // Race the creation operation against timeout
-      const gameOperation = supabase
-        .from('games')
-        .insert([newGame])
-        .select()
-        .single();
-        
-      const { data, error } = await Promise.race([gameOperation, timeoutPromise]);
-
-      if (error) throw error;
-      if (!data) throw new Error('No data returned from game creation');
-      
-      // Clear timeout
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      console.log('Game created successfully:', data.id);
-      await fetchGames();
-      return data.id;
-    } catch (error) {
-      console.error('Error creating game:', error);
-      
-      // Clear timeout
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const joinGame = async (gameId: string): Promise<void> => {
-    console.log('Joining game:', gameId);
-    
-    if (!currentUser) throw new Error('User must be logged in to join a game');
-
-    // Set up operation timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      operationTimeoutRef.current = setTimeout(() => {
-        reject(new Error('Game joining timed out'));
-      }, OPERATION_TIMEOUT);
-    });
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // First, get the current game data
-      const { data: game, error: fetchError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!game) throw new Error('Game not found');
-
-      console.log('Retrieved game data:', game.name);
-      
-      // Parse the game data
-      const gameData = game as Game;
-      
-      // Check if player is already in the game
-      if (gameData.players && Array.isArray(gameData.players)) {
-        const existingPlayer = gameData.players.find(p => p.id === currentUser.id);
-        
-        if (existingPlayer) {
-          console.log('Player already in game, no need to join');
-          // If the player had left, mark them as rejoined
-          if (existingPlayer.left) {
-            const updatedPlayers = gameData.players.map(p => 
-              p.id === currentUser.id ? { ...p, left: false } : p
-            );
-            
-            const { error: updateError } = await supabase
-              .from('games')
-              .update({ players: updatedPlayers })
-              .eq('id', gameId);
-              
-            if (updateError) throw updateError;
-          }
-          
-          // Subscribe to this specific game
-          subscribeToGame(gameId);
-          
-          // Clear timeout
-          if (operationTimeoutRef.current) {
-            clearTimeout(operationTimeoutRef.current);
-            operationTimeoutRef.current = null;
-          }
-          
-          console.log('Successfully rejoined game');
-          await fetchGames();
-          return;
-        }
-      }
-      
-      // Create a player object for the current user
-      const newPlayer: Player = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-        hand: [],
-        tricks: [],
-        currentBid: null
-      };
-      
-      // Add the player to the game
-      const updatedPlayers = [...(gameData.players || []), newPlayer];
-      
-      // Race the update operation against timeout
-      const updateOperation = supabase
-        .from('games')
-        .update({ players: updatedPlayers })
-        .eq('id', gameId);
-        
-      const { error: updateError } = await Promise.race([updateOperation, timeoutPromise]);
-
-      if (updateError) throw updateError;
-      
-      // Clear timeout
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      // Subscribe to this specific game
-      subscribeToGame(gameId);
-      
-      console.log('Successfully joined game');
-      setCurrentGame(gameData);
-      await fetchGames();
-    } catch (error) {
-      console.error('Error joining game:', error);
-      
-      // Clear timeout
-      if (operationTimeoutRef.current) {
-        clearTimeout(operationTimeoutRef.current);
-        operationTimeoutRef.current = null;
-      }
-      
-      // Provide a more user-friendly error message
-      if (error instanceof Error) {
-        if (error.message.includes('timed out')) {
-          setError('Joining the game is taking longer than expected. Please try again.');
-        } else if (error.message.includes('not found')) {
-          setError('The game you tried to join no longer exists.');
-        } else {
-          setError('Failed to join game. Please try again.');
-        }
-      } else {
-        setError('Failed to join game. Please try again.');
-      }
-      
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const leaveGame = async (gameId: string): Promise<void> => {
-    console.log('Leaving game:', gameId);
-    
-    if (!currentUser) throw new Error('User must be logged in to leave a game');
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Get current game data
-      const { data: game, error: fetchError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!game) throw new Error('Game not found');
-      
-      const gameData = game as Game;
-      
-      // Update player status to 'left'
-      if (gameData.players && Array.isArray(gameData.players)) {
-        const updatedPlayers = gameData.players.map(player => 
-          player.id === currentUser.id ? { ...player, left: true } : player
-        );
-        
-        const { error: updateError } = await supabase
-          .from('games')
-          .update({ players: updatedPlayers })
-          .eq('id', gameId);
-
-        if (updateError) throw updateError;
-      }
-      
-      // Unsubscribe from the game
-      unsubscribeFromGame(gameId);
-      
-      console.log('Successfully left game');
-      setCurrentGame(null);
-      await fetchGames();
-    } catch (error) {
-      console.error('Error leaving game:', error);
-      setError('Failed to leave game. Please try again.');
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchGames = async (): Promise<void> => {
-    // Throttle fetches to once per second
-    const now = Date.now();
-    if (now - lastFetchTime.current < 1000) {
-      if (!fetchQueue.current) {
-        fetchQueue.current = true;
-        if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = setTimeout(() => {
-          fetchQueue.current = false;
-          fetchGames();
-        }, 1000);
-      }
-      return;
-    }
-
-    lastFetchTime.current = now;
-    
-    try {
-      console.log('Fetching games');
-      setIsLoading(true);
-      setError(null);
-
       const { data, error } = await supabase
-        .from('games')
+        .from('users')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      if (data) {
-        console.log(`Retrieved ${data.length} games`);
-        setGames(data);
-        
-        // Update current game if it exists
-        if (currentGame) {
-          const updatedCurrentGame = data.find(game => game.id === currentGame.id);
-          if (updatedCurrentGame) {
-            console.log('Updating current game data');
-            setCurrentGame(updatedCurrentGame);
-          } else {
-            console.log('Current game no longer exists');
-            setCurrentGame(null);
-          }
-        }
-      } else {
-        console.log('No games found');
-        setGames([]);
-      }
+      setUsers(data || []);
     } catch (error) {
-      console.error('Error fetching games:', error);
-      setError('Failed to fetch games. Please try refreshing the page.');
+      console.error('Error fetching users:', error);
+    }
+  };
+
+  useEffect(() => {
+    // Check active sessions and sets the user
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await fetchUser(session.user.id);
+        }
+      } catch (error) {
+        console.error('Error checking auth session:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await fetchUser(session.user.id);
+      } else {
+        setCurrentUser(null);
+        setIsAdmin(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const fetchUser = async (userId: string) => {
+    try {
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      // Check if user is banned or locked
+      if (user.status === 'banned') {
+        await logout();
+        throw new Error('Your account has been suspended. Please contact support for assistance.');
+      }
+
+      if (user.account_locked) {
+        await logout();
+        if (user.lock_expires_at && new Date(user.lock_expires_at) > new Date()) {
+          throw new Error(`Your account is temporarily locked. Please try again after ${new Date(user.lock_expires_at).toLocaleString()}`);
+        } else {
+          throw new Error(user.lock_reason || 'Your account is currently locked');
+        }
+      }
+
+      setCurrentUser(user);
+      setIsAdmin(user.role === 'admin');
+
+      // Update last login time
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', userId);
+
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      setCurrentUser(null);
+      setIsAdmin(false);
+      throw error;
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // First check if the user exists and their status
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', email)
+        .single();
+
+      if (userError && userError.code === 'PGRST116') {
+        throw new Error('Invalid email or password');
+      }
+
+      if (userError) throw userError;
+
+      // Check user status before attempting login
+      if (user.status === 'banned') {
+        throw new Error('Your account has been suspended. Please contact support for assistance.');
+      }
+
+      if (user.account_locked) {
+        if (user.lock_expires_at && new Date(user.lock_expires_at) > new Date()) {
+          throw new Error(`Your account is temporarily locked. Please try again after ${new Date(user.lock_expires_at).toLocaleString()}`);
+        }
+        throw new Error(user.lock_reason || 'Your account is currently locked');
+      }
+
+      // Now attempt to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (signInError) {
+        // Handle failed login attempt
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            failed_login_attempts: (user.failed_login_attempts || 0) + 1,
+            last_failed_login: new Date().toISOString()
+          })
+          .eq('id', user.id);
+
+        if (updateError) console.error('Error updating failed login attempts:', updateError);
+
+        throw new Error('Invalid email or password');
+      }
+
+      await fetchUser(user.id);
+
+    } catch (error) {
+      console.error('Login error:', error);
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchGameById = async (gameId: string): Promise<Game | null> => {
-    console.log('Fetching specific game:', gameId);
-    
+  const logout = async () => {
     try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
+      setIsLoading(true);
+      setError(null);
 
-      if (error) {
-        console.error('Error fetching game by ID:', error);
-        return null;
-      }
-      
-      if (!data) {
-        console.log('Game not found');
-        return null;
-      }
-      
-      console.log('Retrieved game data:', data.name);
-      return data as Game;
-    } catch (error) {
-      console.error('Error in fetchGameById:', error);
-      return null;
-    }
-  };
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
 
-  const subscribeToGame = (gameId: string) => {
-    if (gameSpecificChannels.current[gameId]) {
-      console.log('Already subscribed to game:', gameId);
-      return;
-    }
+      setCurrentUser(null);
+      setIsAdmin(false);
+      setUsers([]);
 
-    console.log('Subscribing to game updates:', gameId);
-    
-    const channel = supabase.channel(`game:${gameId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'games',
-        filter: `id=eq.${gameId}`
-      }, async (payload) => {
-        console.log('Game update received:', payload.eventType);
-        
-        // Refresh current game and games list
-        if (payload.new.id === gameId) {
-          setCurrentGame(payload.new as Game);
-        }
-        await fetchGames();
-      })
-      .subscribe((status) => {
-        console.log(`Game ${gameId} subscription status:`, status);
-        if (status === 'SUBSCRIBED') {
-          setConnectionStatus('connected');
-        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
-          setConnectionStatus('disconnected');
+      // Clear any stored auth data
+      localStorage.removeItem('supabase.auth.token');
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key);
         }
       });
 
-    gameSpecificChannels.current[gameId] = channel;
-  };
-
-  const unsubscribeFromGame = (gameId: string) => {
-    const channel = gameSpecificChannels.current[gameId];
-    if (channel) {
-      console.log('Unsubscribing from game:', gameId);
-      channel.unsubscribe();
-      delete gameSpecificChannels.current[gameId];
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      setError('Failed to logout. Please try again.');
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const deleteGame = async (gameId: string): Promise<void> => {
-    console.log('Deleting game:', gameId);
-    
+  const register = async (name: string, email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name
+          }
+        }
+      });
+
+      if (signUpError) throw signUpError;
+      if (!user) throw new Error('No user returned after registration');
+
+      // User profile will be created by the database trigger
+      await fetchUser(user.id);
+    } catch (error) {
+      console.error('Registration error:', error);
+      setError('Failed to register. Please try again.');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateUser = async (userId: string, data: Partial<User>) => {
     try {
       setIsLoading(true);
       setError(null);
 
       const { error } = await supabase
-        .from('games')
-        .delete()
-        .eq('id', gameId);
+        .from('users')
+        .update(data)
+        .eq('id', userId);
 
       if (error) throw error;
-      
-      // If this was the current game, clear it
-      if (currentGame?.id === gameId) {
-        setCurrentGame(null);
+
+      if (userId === currentUser?.id) {
+        await fetchUser(userId);
       }
-      
-      // Unsubscribe from the game channel
-      unsubscribeFromGame(gameId);
-      
-      console.log('Game deleted successfully');
-      await fetchGames();
+
+      // Refresh users list if admin
+      if (isAdmin) {
+        await fetchAllUsers();
+      }
     } catch (error) {
-      console.error('Error deleting game:', error);
-      setError('Failed to delete game. Please try again.');
+      console.error('Update user error:', error);
+      setError('Failed to update user. Please try again.');
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const deleteAllGames = async (): Promise<void> => {
-    console.log('Deleting all waiting games');
-    
+  const deleteUser = async (userId: string): Promise<{ success: boolean; error?: string }> => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const { error: updateError } = await supabase
-        .from('games')
-        .update({ 
-          deleted: true,
-          deleted_at: new Date().toISOString(),
-          state: GameState.COMPLETE
-        })
-        .eq('state', 'waiting');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
 
-      if (updateError) throw updateError;
-      
-      console.log('All waiting games deleted');
-      await fetchGames();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete user');
+      }
+
+      // Refresh users list if admin
+      if (isAdmin) {
+        await fetchAllUsers();
+      }
+
+      return { success: true };
     } catch (error) {
-      console.error('Error deleting all games:', error);
-      setError('Failed to delete all games. Please try again.');
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const startGame = async (gameId: string): Promise<void> => {
-    console.log('Starting game:', gameId);
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const { error } = await supabase
-        .from('games')
-        .update({ state: GameState.IN_PROGRESS })
-        .eq('id', gameId);
-
-      if (error) throw error;
-      
-      console.log('Game started successfully');
-      await fetchGames();
-    } catch (error) {
-      console.error('Error starting game:', error);
-      setError('Failed to start game. Please try again.');
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const sendMessage = async (gameId: string, playerId: string, text: string): Promise<void> => {
-    console.log('Sending message in game:', gameId);
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Get the current game
-      const { data: game, error: fetchError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!game) throw new Error('Game not found');
-      
-      // Find player name
-      const playerName = game.players.find(p => p.id === playerId)?.name || 'Unknown Player';
-      
-      // Create new message
-      const newMessage = {
-        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        playerId,
-        playerName,
-        text,
-        timestamp: new Date().toISOString()
+      console.error('Delete user error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to delete user' 
       };
-
-      // Update messages
-      const updatedMessages = [...(game.messages || []), newMessage];
-      
-      // Update the game
-      const { error: updateError } = await supabase
-        .from('games')
-        .update({ messages: updatedMessages })
-        .eq('id', gameId);
-
-      if (updateError) throw updateError;
-      
-      console.log('Message sent successfully');
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
-      throw error;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const banUser = async (userId: string) => {
+    await updateUser(userId, { 
+      status: 'banned',
+      account_locked: true,
+      lock_reason: 'Your account has been suspended. Please contact support for assistance.',
+      lock_expires_at: null
+    });
+
+    // If the banned user is currently logged in, force logout
+    if (userId === currentUser?.id) {
+      await logout();
+    }
+  };
+
+  const unbanUser = async (userId: string) => {
+    await updateUser(userId, {
+      status: 'active',
+      account_locked: false,
+      lock_reason: null,
+      lock_expires_at: null,
+      failed_login_attempts: 0
+    });
+  };
+
+  const updateProfile = async (data: Partial<User>) => {
+    if (!currentUser) throw new Error('No user logged in');
+    await updateUser(currentUser.id, data);
   };
 
   const value = {
-    games,
-    currentGame,
+    currentUser,
     isLoading,
+    isAdmin,
     error,
-    connectionStatus,
-    onlinePlayers,
-    createGame,
-    joinGame,
-    leaveGame,
-    fetchGames,
-    fetchGameById,
-    subscribeToGame,
-    unsubscribeFromGame,
-    deleteGame,
-    deleteAllGames,
-    startGame,
-    sendMessage,
-    reconnect
+    users,
+    login,
+    logout,
+    register,
+    updateUser,
+    deleteUser,
+    banUser,
+    unbanUser,
+    updateProfile
   };
 
   return (
-    <GameContext.Provider value={value}>
+    <AuthContext.Provider value={value}>
       {children}
-    </GameContext.Provider>
+    </AuthContext.Provider>
   );
 };
 
-export const useGame = () => {
-  const context = useContext(GameContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useGame must be used within a GameProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
+
+export { AuthContext }
