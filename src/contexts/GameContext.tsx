@@ -154,30 +154,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const gameData = game as Game;
       
-      const newPlayer = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-        hand: [],
-        tricks: [],
-        currentBid: null
-      };
+      // Create a new player object
+      const newPlayer = currentUser.id;
       
       let playerExists = false;
       let updatedPlayers = [];
       
       if (gameData.players && Array.isArray(gameData.players)) {
-        const existingPlayerIndex = gameData.players.findIndex(p => 
-          typeof p === 'object' && p !== null && 'id' in p && p.id === currentUser.id
-        );
+        playerExists = gameData.players.includes(currentUser.id);
         
-        if (existingPlayerIndex >= 0) {
-          console.log('Player already exists in the game, updating status');
-          playerExists = true;
-          
-          updatedPlayers = gameData.players.map((p, index) => 
-            index === existingPlayerIndex ? { ...p, left: false } : p
-          );
+        if (playerExists) {
+          console.log('Player already exists in the game');
+          updatedPlayers = gameData.players;
         } else {
           updatedPlayers = [...gameData.players, newPlayer];
         }
@@ -250,9 +238,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fetchError) throw fetchError;
 
-      const updatedPlayers = game.players.map(p => 
-        p.id === currentUser.id ? { ...p, left: true } : p
-      );
+      const updatedPlayers = game.players.filter(playerId => playerId !== currentUser.id);
 
       const { error: updateError } = await supabase
         .from('games')
