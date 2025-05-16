@@ -51,11 +51,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initialConnectionTimeout = useRef<NodeJS.Timeout | null>(null);
   const operationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Subscribe to all games changes
   useEffect(() => {
     if (!currentUser) return;
 
-    // Subscribe to all games changes
     const channel = supabase.channel('public:games')
       .on('postgres_changes', {
         event: '*',
@@ -84,7 +82,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser]);
 
-  // Handle presence channel for online players
   useEffect(() => {
     if (!currentUser) return;
 
@@ -120,7 +117,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser]);
 
-  // Auto-refresh games periodically
   useEffect(() => {
     if (!currentUser) return;
 
@@ -137,27 +133,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser]);
 
-  // Clean up function for all subscriptions
   useEffect(() => {
     return () => {
-      // Clean up game-specific subscriptions
       Object.keys(gameSpecificChannels.current).forEach(gameId => {
         unsubscribeFromGame(gameId);
       });
 
-      // Clean up games channel
       if (gamesChannel.current) {
         gamesChannel.current.unsubscribe();
         gamesChannel.current = null;
       }
 
-      // Clean up presence channel
       if (presenceChannel.current) {
         presenceChannel.current.unsubscribe();
         presenceChannel.current = null;
       }
 
-      // Clean up intervals and timeouts
       if (autoRefreshInterval.current) {
         clearInterval(autoRefreshInterval.current);
         autoRefreshInterval.current = null;
@@ -182,20 +173,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      const player: Player = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-        hand: [],
-        tricks: [],
-        currentBid: null
-      };
-
       const newGame: Partial<Game> = {
         variant,
         name,
         created_by: currentUser.id,
-        players: [player],
+        players: [currentUser.id],
         state: GameState.WAITING,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -260,49 +242,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const gameData = game as Game;
       
-      const newPlayer: Player = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-        hand: [],
-        tricks: [],
-        currentBid: null
-      };
+      let updatedPlayers: string[] = [];
       
-      let updatedPlayers = [];
-      let playerExists = false;
-      
-      if (gameData.players && Array.isArray(gameData.players)) {
-        const playerObjects = gameData.players.map(p => {
-          if (typeof p === 'string') {
-            if (p === currentUser.id) {
-              playerExists = true;
-              return newPlayer;
-            }
-            return {
-              id: p,
-              name: 'Player',
-              avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=default',
-              hand: [],
-              tricks: [],
-              currentBid: null
-            };
-          } else {
-            if (p.id === currentUser.id) {
-              playerExists = true;
-              return newPlayer;
-            }
-            return p;
-          }
-        });
+      if (Array.isArray(gameData.players)) {
+        updatedPlayers = [...new Set(
+          gameData.players.map(p => typeof p === 'string' ? p : p.id)
+        )];
         
-        if (playerExists) {
-          updatedPlayers = playerObjects;
-        } else {
-          updatedPlayers = [...playerObjects, newPlayer];
+        if (!updatedPlayers.includes(currentUser.id)) {
+          updatedPlayers.push(currentUser.id);
         }
       } else {
-        updatedPlayers = [newPlayer];
+        updatedPlayers = [currentUser.id];
       }
       
       const updateOperation = supabase
@@ -369,19 +320,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fetchError) throw fetchError;
 
-      const isPlayerObjects = game.players.length > 0 && typeof game.players[0] !== 'string';
-      
-      let updatedPlayers;
-      if (isPlayerObjects) {
-        updatedPlayers = game.players.map(p => {
-          if ((typeof p === 'string' && p === playerId) || (typeof p === 'object' && p.id === playerId)) {
-            return { ...p, left: true };
-          }
-          return p;
-        });
-      } else {
-        updatedPlayers = game.players.filter(p => p !== playerId);
-      }
+      const updatedPlayers = game.players.filter((p: string | Player) => 
+        (typeof p === 'string' ? p : p.id) !== playerId
+      );
 
       const { error: updateError } = await supabase
         .from('games')
