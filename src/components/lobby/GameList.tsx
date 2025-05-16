@@ -38,13 +38,14 @@ const GameList: React.FC<GameListProps> = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       {games.map(game => {
-        const isCreator = game.players && game.players[0]?.id === currentUserId;
-        const isJoined = game.players && game.players.some(p => p.id === currentUserId);
+        const players = game.players || [];
+        const isCreator = players[0]?.id === currentUserId;
+        const isJoined = players.some(p => p.id === currentUserId);
         const isInProgress = game.state !== 'waiting';
         const onlinePlayerIds = Object.values(onlinePlayers)
           .flat()
           .map(p => p.user_id);
-        const onlinePlayersInGame = game.players.filter(p => onlinePlayerIds.includes(p.id));
+        const onlinePlayersInGame = players.filter(p => onlinePlayerIds.includes(p.id));
 
         return (
           <GameCard
