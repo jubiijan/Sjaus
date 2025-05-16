@@ -299,11 +299,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Error fetching games:', error);
-      let errorMessage = 'Failed to fetch games: Unknown error occurred';
+      let errorMessage = 'Failed to fetch games';
       
       if (error instanceof Error) {
         if (error.message.includes('fetch')) {
           errorMessage = 'Network error: Unable to connect to the server. Please check your internet connection.';
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Server is taking too long to respond. Please try again later.';
+        } else if (error.message.includes('configuration')) {
+          errorMessage = 'Server configuration error. Please contact support.';
+        } else if (error.message.includes('Authentication')) {
+          errorMessage = 'Authentication error. Please try logging in again.';
         } else {
           errorMessage = error.message;
         }
