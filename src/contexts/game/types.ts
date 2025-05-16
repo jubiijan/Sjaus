@@ -1,4 +1,3 @@
-```typescript
 import { Game, GameVariant } from '../../types/Game';
 
 export interface GameContextType {
@@ -19,4 +18,3 @@ export interface GameContextType {
   startGame: (gameId: string) => Promise<void>;
   sendMessage: (gameId: string, text: string) => Promise<void>;
 }
-```

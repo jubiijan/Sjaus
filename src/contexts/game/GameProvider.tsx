@@ -1,4 +1,3 @@
-```typescript
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -394,4 +393,3 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </GameContext.Provider>
   );
 };
-```
