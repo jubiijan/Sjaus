@@ -31,10 +31,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const { currentUser } = useContext(AuthContext);
 
-  // Keep track of active subscriptions
-  const activeSubscriptions = useRef<Record<string, boolean>>({});
+  // Keep track of active subscriptions and their status
+  const subscriptions = useRef<Record<string, { channel: any; status: 'connected' | 'disconnected' }>>({});
   const lastFetchTime = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Update overall connection status based on all subscriptions
+  const updateConnectionStatus = () => {
+    const hasActiveSubscription = Object.values(subscriptions.current).some(
+      sub => sub.status === 'connected'
+    );
+    setConnectionStatus(hasActiveSubscription ? 'connected' : 'disconnected');
+  };
 
   // Debounced fetch to prevent multiple rapid fetches
   const debouncedFetch = () => {
@@ -130,7 +138,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const subscribeToGame = (gameId: string) => {
-    if (!supabase || activeSubscriptions.current[gameId]) return;
+    if (!supabase || subscriptions.current[gameId]) return;
 
     const channel = supabase.channel(`game:${gameId}`)
       .on('postgres_changes', 
@@ -147,26 +155,30 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       )
       .subscribe(status => {
         console.log(`Game ${gameId} subscription status:`, status);
-        setConnectionStatus(status === 'SUBSCRIBED' ? 'connected' : 'disconnected');
+        
+        subscriptions.current[gameId] = {
+          channel,
+          status: status === 'SUBSCRIBED' ? 'connected' : 'disconnected'
+        };
+        updateConnectionStatus();
 
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           console.log(`Game ${gameId} subscription closed or errored, retrying in 5s...`);
           setTimeout(() => {
-            delete activeSubscriptions.current[gameId];
+            delete subscriptions.current[gameId];
             subscribeToGame(gameId);
           }, 5000);
-        } else if (status === 'SUBSCRIBED') {
-          activeSubscriptions.current[gameId] = true;
         }
       });
   };
 
   const unsubscribeFromGame = (gameId: string) => {
-    if (!supabase || !activeSubscriptions.current[gameId]) return;
+    const subscription = subscriptions.current[gameId];
+    if (!subscription) return;
 
-    supabase.channel(`game:${gameId}`).unsubscribe();
-    delete activeSubscriptions.current[gameId];
-    setConnectionStatus('disconnected');
+    subscription.channel.unsubscribe();
+    delete subscriptions.current[gameId];
+    updateConnectionStatus();
   };
 
   useEffect(() => {
@@ -179,6 +191,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     return () => {
+      // Clean up all subscriptions
+      Object.entries(subscriptions.current).forEach(([gameId, subscription]) => {
+        subscription.channel.unsubscribe();
+        delete subscriptions.current[gameId];
+      });
+      
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current);
       }
