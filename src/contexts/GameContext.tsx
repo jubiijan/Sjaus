@@ -30,12 +30,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const { currentUser } = useContext(AuthContext);
-  
+
   // Keep track of active subscriptions
   const activeSubscriptions = useRef<Record<string, boolean>>({});
   const lastFetchTime = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Debounced fetch to prevent multiple rapid fetches
   const debouncedFetch = () => {
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
