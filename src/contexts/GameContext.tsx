@@ -338,16 +338,49 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       setError(null);
-      
-      const { error } = await supabase
+
+      // First check if the player is actually in the game
+      const { data: player, error: playerError } = await supabase
+        .from('game_players')
+        .select('*')
+        .eq('game_id', gameId)
+        .eq('user_id', playerId)
+        .single();
+
+      if (playerError) {
+        if (playerError.code === 'PGRST116') {
+          throw new Error('Player is not in this game');
+        }
+        throw playerError;
+      }
+
+      // Update the player's status to left
+      const { error: updateError } = await supabase
         .from('game_players')
         .update({ has_left: true })
         .eq('game_id', gameId)
         .eq('user_id', playerId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      await fetchGames();
+      // Unsubscribe from game updates
+      unsubscribeFromGame(gameId);
+
+      // Update local state
+      setGames(prevGames => 
+        prevGames.map(game => {
+          if (game.id === gameId) {
+            return {
+              ...game,
+              players: game.players.map(p => 
+                p.id === playerId ? { ...p, left: true } : p
+              )
+            };
+          }
+          return game;
+        })
+      );
+
       setError(null);
     } catch (error) {
       console.error('Error leaving game:', error);
@@ -379,10 +412,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { error: updateError } = await supabase
         .from('games')
-        .update({ deleted: true, deleted_at: new Date().toISOString() })
+        .update({ 
+          deleted: true, 
+          deleted_at: new Date().toISOString(),
+          state: GameState.COMPLETE
+        })
         .eq('id', gameId);
 
       if (updateError) {
+        console.error('Error soft-deleting game, attempting hard delete:', updateError);
+        
         const { error: deleteError } = await supabase
           .from('games')
           .delete()
@@ -391,7 +430,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (deleteError) throw deleteError;
       }
 
+      // Unsubscribe from this game
+      unsubscribeFromGame(gameId);
+      
+      // Update local state immediately for responsiveness
       setGames(prevGames => prevGames.filter(g => g.id !== gameId));
+      
+      // Set current game to null if deleting the current game
+      if (currentGame?.id === gameId) {
+        setCurrentGame(null);
+      }
+      
       setError(null);
     } catch (error) {
       console.error('Error deleting game:', error);
@@ -414,12 +463,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const { error } = await supabase
         .from('games')
-        .update({ deleted: true })
+        .update({ 
+          deleted: true, 
+          deleted_at: new Date().toISOString(),
+          state: GameState.COMPLETE
+        })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
       if (error) throw error;
 
+      // Unsubscribe from all game-specific channels
+      Object.keys(subscriptions.current).forEach(gameId => {
+        unsubscribeFromGame(gameId);
+      });
+      
       setGames([]);
+      setCurrentGame(null);
       setError(null);
     } catch (error) {
       console.error('Error deleting all games:', error);
@@ -449,7 +508,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
 
       console.log('Game started successfully:', gameId);
-      await fetchGames();
       setError(null);
     } catch (error) {
       console.error('Error starting game:', error);
@@ -465,8 +523,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) throw new Error('Supabase client is not initialized');
 
     try {
-      setIsLoading(true);
       setError(null);
+      // We don't set loading to true here to keep the UI responsive during messaging
       
       const { error } = await supabase
         .from('game_messages')
@@ -477,15 +535,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
       if (error) throw error;
-
-      await fetchGames();
+      
+      // No need to manually update state; subscription will handle it
       setError(null);
     } catch (error) {
       console.error('Error sending message:', error);
       setError('Failed to send message. Please try again.');
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
