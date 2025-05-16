@@ -68,6 +68,7 @@ const GameCard: React.FC<GameCardProps> = ({
   };
 
   const isFull = game.players && game.players.length >= getMaxPlayers(game.variant);
+  const activePlayers = game.players?.filter(p => !p.left) || [];
 
   return (
     <div className="group bg-[#1E293B] rounded-xl shadow-lg overflow-hidden border border-[#334155] hover:border-[#D4AF37] transition-all duration-300 transform hover:-translate-y-1">
@@ -118,7 +119,7 @@ const GameCard: React.FC<GameCardProps> = ({
 
         <div className="flex items-center mb-4">
           <div className="flex -space-x-2 mr-2">
-            {(game.players || []).map((player, index) => (
+            {activePlayers.map((player, index) => (
               <div 
                 key={player.id}
                 className="w-8 h-8 rounded-full border-2 border-[#1E293B] overflow-hidden bg-gray-700"
@@ -126,11 +127,11 @@ const GameCard: React.FC<GameCardProps> = ({
                 style={{ 
                   backgroundImage: `url(${player.avatar})`,
                   backgroundSize: 'cover',
-                  zIndex: game.players ? game.players.length - index : 0
+                  zIndex: activePlayers.length - index
                 }}
               />
             ))}
-            {[...Array(getMaxPlayers(game.variant) - (game.players?.length || 0))].map((_, i) => (
+            {[...Array(getMaxPlayers(game.variant) - activePlayers.length)].map((_, i) => (
               <div 
                 key={`empty-${i}`} 
                 className="w-8 h-8 rounded-full border-2 border-[#1E293B] bg-gray-800 flex items-center justify-center"
@@ -140,7 +141,7 @@ const GameCard: React.FC<GameCardProps> = ({
             ))}
           </div>
           <div className="text-sm text-gray-400">
-            {game.players?.length || 0}/{getMaxPlayers(game.variant)}
+            {activePlayers.length}/{getMaxPlayers(game.variant)}
             <span className="ml-2 text-green-400">
               ({onlinePlayersCount} online)
             </span>
@@ -160,9 +161,9 @@ const GameCard: React.FC<GameCardProps> = ({
           {isCreator && !isInProgress ? (
             <button
               onClick={() => onStart(game.id)}
-              disabled={!game.players || game.players.length < 2}
+              disabled={activePlayers.length < 2}
               className={`px-4 py-2 rounded-lg font-semibold flex items-center ${
-                game.players && game.players.length >= 2
+                activePlayers.length >= 2
                   ? 'bg-[#D4AF37] hover:bg-[#E9C85D] text-[#0F172A]'
                   : 'bg-gray-700 text-gray-500 cursor-not-allowed'
               }`}
