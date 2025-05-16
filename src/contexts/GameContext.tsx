@@ -114,28 +114,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'create',
-        userId: currentUser.id,
-        name,
-        variant
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create',
+          userId: currentUser.id,
+          name,
+          variant
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to create game');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to create game: ${response.statusText}`);
+      }
+
+      const game = await response.json();
+      await fetchGames();
+      return game.id;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to create game: ${error.message}`);
+      }
+      throw new Error('Failed to create game: Unknown error occurred');
     }
-
-    const game = await response.json();
-    await fetchGames();
-    return game.id;
   };
 
   const joinGame = async (gameId: string): Promise<void> => {
@@ -144,26 +151,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'join',
-        gameId,
-        userId: currentUser.id
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'join',
+          gameId,
+          userId: currentUser.id
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to join game');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to join game: ${response.statusText}`);
+      }
+
+      subscribeToGame(gameId);
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to join game: ${error.message}`);
+      }
+      throw new Error('Failed to join game: Unknown error occurred');
     }
-
-    subscribeToGame(gameId);
-    await fetchGames();
   };
 
   const leaveGame = async (gameId: string): Promise<void> => {
@@ -172,31 +186,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'leave',
-        gameId,
-        userId: currentUser.id
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'leave',
+          gameId,
+          userId: currentUser.id
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to leave game');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to leave game: ${response.statusText}`);
+      }
+
+      unsubscribeFromGame(gameId);
+      setCurrentGame(null);
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to leave game: ${error.message}`);
+      }
+      throw new Error('Failed to leave game: Unknown error occurred');
     }
-
-    unsubscribeFromGame(gameId);
-    setCurrentGame(null);
-    await fetchGames();
   };
 
   const fetchGames = async (): Promise<void> => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setError('User must be logged in to fetch games');
+      return;
+    }
 
     const now = Date.now();
     if (now - lastFetchTime.current < 1000) {
@@ -213,58 +237,77 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     lastFetchTime.current = now;
     setIsLoading(true);
-    setError(null); // Reset error state before fetching
+    setError(null);
 
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError) {
-        throw new Error(`Session error: ${sessionError.message}`);
+        throw new Error(`Authentication error: ${sessionError.message}`);
       }
       
       if (!session) {
-        throw new Error('No active session found');
+        throw new Error('No active session found. Please log in again.');
       }
 
-      if (!import.meta.env.VITE_SUPABASE_URL) {
-        throw new Error('Supabase URL is not configured');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('Server configuration error: Supabase URL is not configured');
       }
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'get',
-          userId: currentUser.id
-        })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), OPERATION_TIMEOUT);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
-        throw new Error(errorData.error || `Failed to fetch games: ${response.statusText}`);
-      }
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/game-access`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'get',
+            userId: currentUser.id
+          }),
+          signal: controller.signal
+        });
 
-      const games = await response.json();
-      setGames(games);
-      
-      if (currentGame) {
-        const updatedCurrentGame = games.find(game => game.id === currentGame.id);
-        setCurrentGame(updatedCurrentGame || null);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ 
+            error: `Server error: ${response.status} ${response.statusText}` 
+          }));
+          throw new Error(errorData.error || `Failed to fetch games: ${response.statusText}`);
+        }
+
+        const games = await response.json();
+        setGames(games);
+        
+        if (currentGame) {
+          const updatedCurrentGame = games.find(game => game.id === currentGame.id);
+          setCurrentGame(updatedCurrentGame || null);
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            throw new Error('Request timeout: Server took too long to respond');
+          }
+          throw error;
+        }
+        throw new Error('Network error occurred while fetching games');
       }
     } catch (error) {
       console.error('Error fetching games:', error);
-      let errorMessage = 'Failed to fetch games';
+      let errorMessage = 'Failed to fetch games: Unknown error occurred';
       
       if (error instanceof Error) {
-        errorMessage = error.message;
-        console.error('Error stack:', error.stack);
-      }
-      
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorMessage = 'Network error: Unable to connect to the server';
+        if (error.message.includes('fetch')) {
+          errorMessage = 'Network error: Unable to connect to the server. Please check your internet connection.';
+        } else {
+          errorMessage = error.message;
+        }
+        console.error('Error details:', error.stack);
       }
       
       setError(errorMessage);
@@ -310,25 +353,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'delete',
-        gameId,
-        userId: currentUser.id
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          gameId,
+          userId: currentUser.id
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to delete game');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to delete game: ${response.statusText}`);
+      }
+
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to delete game: ${error.message}`);
+      }
+      throw new Error('Failed to delete game: Unknown error occurred');
     }
-
-    await fetchGames();
   };
 
   const deleteAllGames = async (): Promise<void> => {
@@ -337,24 +387,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'deleteAll',
-        userId: currentUser.id
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'deleteAll',
+          userId: currentUser.id
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to delete all games');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to delete all games: ${response.statusText}`);
+      }
+
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to delete all games: ${error.message}`);
+      }
+      throw new Error('Failed to delete all games: Unknown error occurred');
     }
-
-    await fetchGames();
   };
 
   const startGame = async (gameId: string): Promise<void> => {
@@ -363,25 +420,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'start',
-        gameId,
-        userId: currentUser.id
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'start',
+          gameId,
+          userId: currentUser.id
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to start game');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to start game: ${response.statusText}`);
+      }
+
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to start game: ${error.message}`);
+      }
+      throw new Error('Failed to start game: Unknown error occurred');
     }
-
-    await fetchGames();
   };
 
   const sendMessage = async (gameId: string, text: string): Promise<void> => {
@@ -390,26 +454,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No active session');
 
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'sendMessage',
-        gameId,
-        userId: currentUser.id,
-        text
-      })
-    });
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'sendMessage',
+          gameId,
+          userId: currentUser.id,
+          text
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to send message');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to send message: ${response.statusText}`);
+      }
+
+      await fetchGames();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to send message: ${error.message}`);
+      }
+      throw new Error('Failed to send message: Unknown error occurred');
     }
-
-    await fetchGames();
   };
 
   const value = {
