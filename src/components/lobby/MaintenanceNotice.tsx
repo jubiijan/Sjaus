@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wifi, RefreshCcw, Users } from 'lucide-react';
+import { Wifi, RefreshCw, Users } from 'lucide-react';
 import { useGame } from '../../contexts/GameContext';
 
 const MaintenanceNotice: React.FC = () => {
@@ -37,7 +37,7 @@ const MaintenanceNotice: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center">
-          <RefreshCcw 
+          <RefreshCw 
             className={`h-4 w-4 ${
               connectionStatus === 'connected' 
                 ? 'text-green-500 animate-spin' 

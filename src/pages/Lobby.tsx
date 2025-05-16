@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { GameVariant } from '../types/Game';
 import GameList from '../components/lobby/GameList';
+import MaintenanceNotice from '../components/lobby/MaintenanceNotice';
 import { AlertTriangle, RefreshCw, Wifi, Users } from 'lucide-react';
 
 const Lobby: React.FC = () => {
@@ -75,6 +76,8 @@ const Lobby: React.FC = () => {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-[#0F172A] to-[#1E293B] py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <MaintenanceNotice />
+        
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
             <h1 className="text-3xl font-bold text-white">Game Lobby</h1>
@@ -120,13 +123,13 @@ const Lobby: React.FC = () => {
           </div>
         )}
 
-        {isLoading && games.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#D4AF37] mb-4"></div>
-            <p className="text-gray-400">Loading games...</p>
-          </div>
-        ) : (
-          <div className="min-h-[400px]">
+        <div className="min-h-[400px]">
+          {isLoading && games.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#D4AF37] mb-4"></div>
+              <p className="text-gray-400">Loading games...</p>
+            </div>
+          ) : (
             <GameList
               games={availableGames}
               currentUserId={currentUser.id}
@@ -136,8 +139,8 @@ const Lobby: React.FC = () => {
               onDeleteGame={(gameId) => setShowDeleteConfirm(gameId)}
               onNavigateToGame={(gameId) => navigate(`/game/${gameId}`)}
             />
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Create game modal */}
         {isCreateModalOpen && (
