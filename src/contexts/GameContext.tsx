@@ -42,9 +42,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fetchQueue = useRef<boolean>(false);
   const autoRefreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const initialConnectionTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
+
+    // Set initial connection status
+    setConnectionStatus('disconnected');
+
+    // Set timeout to change status after 5 seconds
+    initialConnectionTimeout.current = setTimeout(() => {
+      setConnectionStatus('connected');
+    }, 5000);
 
     const channel = supabase.channel('lobby')
       .on('presence', { event: 'sync' }, () => {
@@ -82,6 +91,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (autoRefreshInterval.current) {
         clearInterval(autoRefreshInterval.current);
         autoRefreshInterval.current = null;
+      }
+      if (initialConnectionTimeout.current) {
+        clearTimeout(initialConnectionTimeout.current);
+        initialConnectionTimeout.current = null;
       }
     };
   }, [currentUser]);
