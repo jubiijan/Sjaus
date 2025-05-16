@@ -25,6 +25,8 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
+const POLLING_INTERVAL = 5000; // 5 seconds
+
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [games, setGames] = useState<Game[]>([]);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
@@ -41,7 +43,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const presenceChannel = useRef<RealtimeChannel | null>(null);
   const lastFetchTime = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fetchQueue = useRef<boolean>(false);
+
+  // Set up polling
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Start polling
+    pollingIntervalRef.current = setInterval(fetchGames, POLLING_INTERVAL);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [currentUser]);
 
   // Set up presence channel
   useEffect(() => {
