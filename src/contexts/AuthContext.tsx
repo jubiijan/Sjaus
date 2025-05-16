@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Game, GameState, GameVariant, Player } from '../types/Game';
-import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -38,7 +37,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [onlinePlayers, setOnlinePlayers] = useState<Record<string, { user_id: string; username: string; online_at: string }[]>>({});
   
-  const { currentUser } = useAuth();
+  const { currentUser } = useContext(AuthContext);
   
   const gamesChannel = useRef<RealtimeChannel | null>(null);
   const gameSpecificChannels = useRef<Record<string, RealtimeChannel>>({});
@@ -801,4 +800,21 @@ export const useGame = () => {
     throw new Error('useGame must be used within a GameProvider');
   }
   return context;
+};
+
+// Create and export the AuthContext
+interface AuthContextType {
+  currentUser: {
+    id: string;
+    name: string;
+    avatar?: string;
+  } | null;
+}
+
+const AuthContext = createContext<AuthContextType>({
+  currentUser: null
+});
+
+export const useAuth = () => {
+  return useContext(AuthContext);
 };
