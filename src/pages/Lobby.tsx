@@ -42,7 +42,7 @@ const Lobby: React.FC = () => {
 
   const handleJoinGame = async (gameId: string) => {
     try {
-      await joinGame(gameId, currentUser.id);
+      await joinGame(gameId);
       navigate(`/game/${gameId}`);
     } catch (error) {
       console.error('Failed to join game:', error);
