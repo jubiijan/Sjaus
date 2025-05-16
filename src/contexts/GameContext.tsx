@@ -33,8 +33,6 @@ export const useGame = () => {
   return context;
 };
 
-const OPERATION_TIMEOUT = 10000; // 10 seconds
-
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [games, setGames] = useState<Game[]>([]);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
@@ -566,7 +564,3 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </GameContext.Provider>
   );
 };
-
-export { GameContext };
-export { GameProvider };
-export { useGame };
