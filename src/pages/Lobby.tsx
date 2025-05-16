@@ -126,15 +126,17 @@ const Lobby: React.FC = () => {
             <p className="text-gray-400">Loading games...</p>
           </div>
         ) : (
-          <GameList
-            games={availableGames}
-            currentUserId={currentUser.id}
-            isAdmin={isAdmin}
-            onJoinGame={handleJoinGame}
-            onStartGame={handleStartGame}
-            onDeleteGame={(gameId) => setShowDeleteConfirm(gameId)}
-            onNavigateToGame={(gameId) => navigate(`/game/${gameId}`)}
-          />
+          <div className="min-h-[400px]">
+            <GameList
+              games={availableGames}
+              currentUserId={currentUser.id}
+              isAdmin={isAdmin}
+              onJoinGame={handleJoinGame}
+              onStartGame={handleStartGame}
+              onDeleteGame={(gameId) => setShowDeleteConfirm(gameId)}
+              onNavigateToGame={(gameId) => navigate(`/game/${gameId}`)}
+            />
+          </div>
         )}
 
         {/* Create game modal */}
