@@ -129,54 +129,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // First check if the user exists and their status
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('email', email)
-        .single();
-
-      if (userError && userError.code === 'PGRST116') {
-        throw new Error('Invalid email or password');
-      }
-
-      if (userError) throw userError;
-
-      // Check user status before attempting login
-      if (user.status === 'banned') {
-        throw new Error('Your account has been suspended. Please contact support for assistance.');
-      }
-
-      if (user.account_locked) {
-        if (user.lock_expires_at && new Date(user.lock_expires_at) > new Date()) {
-          throw new Error(`Your account is temporarily locked. Please try again after ${new Date(user.lock_expires_at).toLocaleString()}`);
-        }
-        throw new Error(user.lock_reason || 'Your account is currently locked');
-      }
-
-      // Now attempt to sign in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      // Sign in with Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (signInError) {
-        // Handle failed login attempt
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({
-            failed_login_attempts: (user.failed_login_attempts || 0) + 1,
-            last_failed_login: new Date().toISOString()
-          })
-          .eq('id', user.id);
-
-        if (updateError) console.error('Error updating failed login attempts:', updateError);
-
+      if (error) {
         throw new Error('Invalid email or password');
       }
 
-      await fetchUser(user.id);
+      if (!data.user) {
+        throw new Error('No user returned after login');
+      }
 
+      // Fetch user data
+      await fetchUser(data.user.id);
+      
     } catch (error) {
       console.error('Login error:', error);
       setError(error instanceof Error ? error.message : 'An unexpected error occurred');
@@ -234,8 +203,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (signUpError) throw signUpError;
       if (!user) throw new Error('No user returned after registration');
 
-      // User profile will be created by the database trigger
-      await fetchUser(user.id);
+      // Wait a brief moment to ensure the database trigger creates the user profile
+      setTimeout(async () => {
+        try {
+          await fetchUser(user.id);
+        } catch (error) {
+          console.error('Error fetching user after registration:', error);
+        }
+      }, 1000);
+      
     } catch (error) {
       console.error('Registration error:', error);
       setError('Failed to register. Please try again.');
@@ -374,5 +350,3 @@ export const useAuth = () => {
   }
   return context;
 };
-
-export { AuthContext }
