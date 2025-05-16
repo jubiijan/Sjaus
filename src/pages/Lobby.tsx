@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { GameVariant } from '../types/Game';
 import GameList from '../components/lobby/GameList';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Wifi } from 'lucide-react';
 
 const Lobby: React.FC = () => {
   const { currentUser, isAdmin } = useAuth();
@@ -16,8 +16,6 @@ const Lobby: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  if (!currentUser) return null;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -76,7 +74,19 @@ const Lobby: React.FC = () => {
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-[#0F172A] to-[#1E293B] py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-white">Game Lobby</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-3xl font-bold text-white">Game Lobby</h1>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+              connectionStatus === 'connected'
+                ? 'bg-green-500/10 text-green-400'
+                : 'bg-orange-500/10 text-orange-400'
+            }`}>
+              <Wifi className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                {connectionStatus === 'connected' ? 'CONNECTED' : 'Connecting...'}
+              </span>
+            </div>
+          </div>
           <div className="flex gap-4">
             <button
               onClick={handleRefresh}
