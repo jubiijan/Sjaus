@@ -28,10 +28,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('connected');
   const { currentUser } = useContext(AuthContext);
 
-  // Keep track of active subscriptions and their status
+  // Keep track of active subscriptions
   const subscriptions = useRef<Record<string, { channel: any; status: 'connected' | 'disconnected' }>>({});
   const lastFetchTime = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -165,8 +165,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           console.log(`Game ${gameId} subscription closed or errored, retrying in 5s...`);
           setTimeout(() => {
-            delete subscriptions.current[gameId];
-            subscribeToGame(gameId);
+            if (subscriptions.current[gameId]) {
+              subscriptions.current[gameId].channel.unsubscribe();
+              delete subscriptions.current[gameId];
+              subscribeToGame(gameId);
+            }
           }, 5000);
         }
       });
