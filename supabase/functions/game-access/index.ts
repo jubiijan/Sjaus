@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
       }
     );
 
-    const { action, gameId, userId } = await req.json();
+    const { action, gameId, userId, name, variant } = await req.json();
 
     // Verify user exists and is authenticated
     const { data: user, error: userError } = await supabaseClient.auth.admin.getUserById(userId);
@@ -32,21 +32,82 @@ Deno.serve(async (req) => {
     }
 
     switch (action) {
-      case 'create': {
-        const { name, variant } = await req.json();
-        const { data, error } = await supabaseClient
+      case 'get': {
+        // Get all active games
+        const { data: games, error: gamesError } = await supabaseClient
           .from('games')
-          .insert([{
+          .select(`
+            *,
+            players:game_players(
+              user:users(
+                id,
+                name,
+                avatar
+              )
+            ),
+            messages:game_messages(
+              id,
+              user:users(
+                id,
+                name
+              ),
+              text,
+              created_at
+            )
+          `)
+          .eq('deleted', false)
+          .order('created_at', { ascending: false });
+
+        if (gamesError) throw gamesError;
+
+        // Transform the data to match the expected format
+        const transformedGames = games.map(game => ({
+          ...game,
+          players: game.players.map(p => ({
+            id: p.user.id,
+            name: p.user.name,
+            avatar: p.user.avatar
+          })),
+          messages: game.messages.map(m => ({
+            id: m.id,
+            playerId: m.user.id,
+            playerName: m.user.name,
+            text: m.text,
+            timestamp: m.created_at
+          }))
+        }));
+
+        return new Response(JSON.stringify(transformedGames), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'create': {
+        const { data: game, error: createError } = await supabaseClient
+          .from('games')
+          .insert({
             name,
             variant,
             created_by: userId,
-            state: 'waiting'
-          }])
+            state: 'waiting',
+            deleted: false
+          })
           .select()
           .single();
 
-        if (error) throw error;
-        return new Response(JSON.stringify(data), {
+        if (createError) throw createError;
+
+        // Add creator as first player
+        const { error: playerError } = await supabaseClient
+          .from('game_players')
+          .insert({
+            game_id: game.id,
+            user_id: userId
+          });
+
+        if (playerError) throw playerError;
+
+        return new Response(JSON.stringify(game), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -65,10 +126,10 @@ Deno.serve(async (req) => {
         // Add player to game
         const { error: joinError } = await supabaseClient
           .from('game_players')
-          .insert([{
+          .insert({
             game_id: gameId,
             user_id: userId
-          }]);
+          });
 
         if (joinError) throw joinError;
 
@@ -86,44 +147,6 @@ Deno.serve(async (req) => {
         if (leaveError) throw leaveError;
 
         return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-
-      case 'get': {
-        // Get game and check access
-        const { data: game, error: gameError } = await supabaseClient
-          .from('games')
-          .select(`
-            *,
-            game_players (
-              user_id,
-              team,
-              hand,
-              tricks,
-              current_bid,
-              has_left
-            ),
-            game_messages (
-              id,
-              user_id,
-              text,
-              created_at
-            )
-          `)
-          .eq('id', gameId)
-          .single();
-
-        if (gameError) throw gameError;
-
-        const canAccess = 
-          game.state === 'waiting' ||
-          game.created_by === userId ||
-          game.game_players.some(p => p.user_id === userId);
-
-        if (!canAccess) throw new Error('Unauthorized');
-
-        return new Response(JSON.stringify(game), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
