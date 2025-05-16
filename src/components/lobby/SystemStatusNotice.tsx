@@ -14,9 +14,13 @@ const SystemStatusNotice: React.FC = () => {
               <AlertTriangle className="h-4 w-4 text-[#D4AF37] mr-2" />
               System Improvements in Progress
             </h3>
-            <p className="text-gray-400 text-sm mt-1">
-              We're actively working on enhancing your gaming experience
-            </p>
+            <div className="text-gray-400 text-sm mt-1">
+              <p>Currently working on:</p>
+              <ul className="list-disc list-inside ml-2 mt-1">
+                <li>Creating new game sessions</li>
+                <li>Joining existing games</li>
+              </ul>
+            </div>
           </div>
         </div>
         <div className="flex items-center">
