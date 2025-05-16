@@ -213,10 +213,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     lastFetchTime.current = now;
     setIsLoading(true);
+    setError(null); // Reset error state before fetching
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No active session');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+      
+      if (!session) {
+        throw new Error('No active session found');
+      }
+
+      if (!import.meta.env.VITE_SUPABASE_URL) {
+        throw new Error('Supabase URL is not configured');
+      }
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
         method: 'POST',
@@ -231,8 +243,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch games');
+        const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
+        throw new Error(errorData.error || `Failed to fetch games: ${response.statusText}`);
       }
 
       const games = await response.json();
@@ -244,7 +256,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Error fetching games:', error);
-      setError(error instanceof Error ? error.message : 'Failed to fetch games');
+      let errorMessage = 'Failed to fetch games';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error('Error stack:', error.stack);
+      }
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = 'Network error: Unable to connect to the server';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
