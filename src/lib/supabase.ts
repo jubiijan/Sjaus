@@ -12,7 +12,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    // Changed to false to avoid URL-based session conflicts that might cause cookie issues
     detectSessionInUrl: false, 
     flowType: 'pkce',
     storage: localStorage,
@@ -26,7 +25,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       'x-application-name': 'sjaus'
     }
   },
-  // Added realtime configuration for better performance with multiplayer features
   realtime: {
     params: {
       eventsPerSecond: 10
@@ -34,25 +32,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Enhanced session recovery function with better error handling and cleanup
+// Simplified session recovery function with better error handling
 export const recoverSession = async () => {
   try {
-    // Clear any potentially corrupted auth data before checking session
-    const localStorageKeys = Object.keys(localStorage);
-    const staleAuthKeys = localStorageKeys.filter(key => 
-      key.startsWith('sb-') || 
-      key.includes('supabase.auth') ||
-      key.includes('supabase_auth')
-    ).filter(key => 
-      // Don't remove the current auth token if it exists
-      key !== 'supabase.auth.token' || 
-      !localStorage.getItem('supabase.auth.token')
-    );
+    console.log('Attempting to recover session');
     
-    // Remove any stale auth keys that might be causing conflicts
-    staleAuthKeys.forEach(key => localStorage.removeItem(key));
-    
-    // Now check for an existing session
+    // Check for an existing session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError) {
@@ -62,22 +47,23 @@ export const recoverSession = async () => {
     
     // If no session exists, return null without attempting refresh
     if (!session) {
+      console.log('No session found');
       return null;
     }
+    
+    console.log('Session found, verifying user');
     
     // Verify the session by checking the user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError) {
       console.warn('User retrieval error:', userError.message);
-      // Only sign out if there was an actual auth error
+      
+      // Only clean up and sign out if there was an actual auth error
       if (userError.message.includes('JWT') || 
           userError.message.includes('Token') || 
           userError.message.includes('Authorization')) {
-        // Clean up before signing out
-        ['supabase.auth.token', 'supabase.auth.refreshToken'].forEach(key => 
-          localStorage.removeItem(key)
-        );
+        console.log('Auth token invalid, signing out');
         await supabase.auth.signOut({ scope: 'local' });
       }
       return null;
@@ -88,33 +74,59 @@ export const recoverSession = async () => {
       return null;
     }
     
+    console.log('Valid session recovered for user:', user.id);
     return session;
   } catch (error) {
     console.error('Unexpected error during session recovery:', error);
     // Clean up and sign out for unexpected errors
-    ['supabase.auth.token', 'supabase.auth.refreshToken'].forEach(key => 
-      localStorage.removeItem(key)
-    );
-    await supabase.auth.signOut({ scope: 'local' });
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.error('Error during sign out:', e);
+    }
     return null;
   }
 };
 
 // Helper function to clean auth state - useful for troubleshooting
 export const cleanAuthState = async () => {
-  // Remove all Supabase-related items from localStorage
-  const localStorageKeys = Object.keys(localStorage);
-  const authKeys = localStorageKeys.filter(key => 
-    key.startsWith('sb-') || 
-    key.includes('supabase') ||
-    key.includes('supa')
-  );
-  
-  authKeys.forEach(key => localStorage.removeItem(key));
-  
-  // Sign out completely
-  await supabase.auth.signOut({ scope: 'global' });
-  
-  // Reload the page to ensure clean state
-  window.location.reload();
+  console.log('Cleaning auth state');
+  try {
+    // Remove all Supabase-related items from localStorage
+    const localStorageKeys = Object.keys(localStorage);
+    const authKeys = localStorageKeys.filter(key => 
+      key.startsWith('sb-') || 
+      key.includes('supabase') ||
+      key.includes('supa')
+    );
+    
+    console.log('Removing auth keys:', authKeys);
+    authKeys.forEach(key => localStorage.removeItem(key));
+    
+    // Sign out completely
+    await supabase.auth.signOut({ scope: 'global' });
+    console.log('Auth state cleaned successfully');
+    
+    return true;
+  } catch (error) {
+    console.error('Error cleaning auth state:', error);
+    return false;
+  }
+};
+
+// New function to check auth status
+export const checkAuthStatus = async () => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    
+    if (!session) {
+      return { loggedIn: false, user: null };
+    }
+    
+    return { loggedIn: true, user: session.user };
+  } catch (error) {
+    console.error('Error checking auth status:', error);
+    return { loggedIn: false, user: null, error };
+  }
 };
