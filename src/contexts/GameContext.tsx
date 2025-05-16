@@ -51,14 +51,42 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initialConnectionTimeout = useRef<NodeJS.Timeout | null>(null);
   const operationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Subscribe to all games changes
   useEffect(() => {
     if (!currentUser) return;
 
-    setConnectionStatus('disconnected');
+    // Subscribe to all games changes
+    const channel = supabase.channel('public:games')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'games'
+      }, async () => {
+        await fetchGames();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Subscribed to all games changes');
+          setConnectionStatus('connected');
+        } else {
+          console.log('Games subscription status:', status);
+          setConnectionStatus('disconnected');
+        }
+      });
 
-    initialConnectionTimeout.current = setTimeout(() => {
-      setConnectionStatus('connected');
-    }, 5000);
+    gamesChannel.current = channel;
+
+    return () => {
+      if (gamesChannel.current) {
+        gamesChannel.current.unsubscribe();
+        gamesChannel.current = null;
+      }
+    };
+  }, [currentUser]);
+
+  // Handle presence channel for online players
+  useEffect(() => {
+    if (!currentUser) return;
 
     const channel = supabase.channel('lobby')
       .on('presence', { event: 'sync' }, () => {
@@ -84,32 +112,68 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     presenceChannel.current = channel;
 
-    autoRefreshInterval.current = setInterval(() => {
-      fetchGames();
-    }, AUTO_REFRESH_INTERVAL);
-
     return () => {
       if (presenceChannel.current) {
         presenceChannel.current.unsubscribe();
         presenceChannel.current = null;
       }
-      
+    };
+  }, [currentUser]);
+
+  // Auto-refresh games periodically
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const interval = setInterval(() => {
+      fetchGames();
+    }, AUTO_REFRESH_INTERVAL);
+
+    autoRefreshInterval.current = interval;
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [currentUser]);
+
+  // Clean up function for all subscriptions
+  useEffect(() => {
+    return () => {
+      // Clean up game-specific subscriptions
+      Object.keys(gameSpecificChannels.current).forEach(gameId => {
+        unsubscribeFromGame(gameId);
+      });
+
+      // Clean up games channel
+      if (gamesChannel.current) {
+        gamesChannel.current.unsubscribe();
+        gamesChannel.current = null;
+      }
+
+      // Clean up presence channel
+      if (presenceChannel.current) {
+        presenceChannel.current.unsubscribe();
+        presenceChannel.current = null;
+      }
+
+      // Clean up intervals and timeouts
       if (autoRefreshInterval.current) {
         clearInterval(autoRefreshInterval.current);
         autoRefreshInterval.current = null;
       }
-      
+
       if (initialConnectionTimeout.current) {
         clearTimeout(initialConnectionTimeout.current);
         initialConnectionTimeout.current = null;
       }
-      
-      // Clean up all game-specific subscriptions
-      Object.keys(gameSpecificChannels.current).forEach(gameId => {
-        unsubscribeFromGame(gameId);
-      });
+
+      if (operationTimeoutRef.current) {
+        clearTimeout(operationTimeoutRef.current);
+        operationTimeoutRef.current = null;
+      }
     };
-  }, [currentUser]);
+  }, []);
 
   const createGame = async (variant: GameVariant, name: string): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
@@ -118,7 +182,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      // Create player object instead of just using ID
       const player: Player = {
         id: currentUser.id,
         name: currentUser.name,
@@ -132,7 +195,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         variant,
         name,
         created_by: currentUser.id,
-        players: [player],  // Store player object instead of just ID
+        players: [player],
         state: GameState.WAITING,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -155,7 +218,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) throw error;
       
-      // Set current game and subscribe before returning
       setCurrentGame(data);
       subscribeToGame(data.id);
       
@@ -198,7 +260,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const gameData = game as Game;
       
-      // Create new player object
       const newPlayer: Player = {
         id: currentUser.id,
         name: currentUser.name,
@@ -211,17 +272,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let updatedPlayers = [];
       let playerExists = false;
       
-      // Check if the players field is an array of objects or just IDs
       if (gameData.players && Array.isArray(gameData.players)) {
-        // Map through existing players
         const playerObjects = gameData.players.map(p => {
           if (typeof p === 'string') {
-            // If it's just an ID, check if it matches current user
             if (p === currentUser.id) {
               playerExists = true;
               return newPlayer;
             }
-            // Otherwise, create a placeholder player object
             return {
               id: p,
               name: 'Player',
@@ -231,10 +288,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               currentBid: null
             };
           } else {
-            // It's already a player object
             if (p.id === currentUser.id) {
               playerExists = true;
-              return newPlayer; // Update the player data
+              return newPlayer;
             }
             return p;
           }
@@ -263,7 +319,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         operationTimeoutRef.current = null;
       }
       
-      // Subscribe to the game before setting the current game
       subscribeToGame(gameId);
       
       setCurrentGame({
@@ -314,12 +369,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fetchError) throw fetchError;
 
-      // Check if players are objects or IDs
       const isPlayerObjects = game.players.length > 0 && typeof game.players[0] !== 'string';
       
       let updatedPlayers;
       if (isPlayerObjects) {
-        // Mark player as left rather than removing
         updatedPlayers = game.players.map(p => {
           if ((typeof p === 'string' && p === playerId) || (typeof p === 'object' && p.id === playerId)) {
             return { ...p, left: true };
@@ -327,7 +380,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return p;
         });
       } else {
-        // If players are just IDs, filter out the player
         updatedPlayers = game.players.filter(p => p !== playerId);
       }
 
@@ -397,7 +449,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const subscribeToGame = (gameId: string) => {
-    // Check if we already have a subscription for this game
     if (gameSpecificChannels.current[gameId]) {
       console.log(`Already subscribed to game: ${gameId}`);
       return;
@@ -414,7 +465,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }, async (payload) => {
         console.log(`Received update for game: ${gameId}`, payload);
         
-        // Fetch the latest game data
         try {
           const { data, error } = await supabase
             .from('games')
@@ -428,12 +478,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           
           if (data) {
-            // Update current game if it matches
             if (currentGame && currentGame.id === gameId) {
               setCurrentGame(data);
             }
             
-            // Also update the game in the games array
             setGames(prevGames => {
               const updatedGames = [...prevGames];
               const index = updatedGames.findIndex(g => g.id === gameId);
@@ -481,15 +529,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) throw error;
       
-      // Unsubscribe from the game
       unsubscribeFromGame(gameId);
       
-      // Clear current game if it matches
       if (currentGame && currentGame.id === gameId) {
         setCurrentGame(null);
       }
       
-      // Update games list
       await fetchGames();
     } catch (error) {
       console.error('Error deleting game:', error);
@@ -520,12 +565,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (updateError) throw updateError;
 
-      // Unsubscribe from all games
       Object.keys(gameSpecificChannels.current).forEach(gameId => {
         unsubscribeFromGame(gameId);
       });
       
-      // Clear current game
       setCurrentGame(null);
       
       await fetchGames();
@@ -594,7 +637,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         timestamp: new Date().toISOString()
       };
 
-      // Ensure messages is an array, if not initialize it
       const updatedMessages = [...(game.messages || []), newMessage];
       
       const { error: updateError } = await supabase
@@ -607,7 +649,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (updateError) throw updateError;
       
-      // Update current game if it matches
       if (currentGame && currentGame.id === gameId) {
         setCurrentGame({
           ...currentGame,
@@ -615,7 +656,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
       
-      // Only fetch all games if necessary (could be optimized to skip this)
       await fetchGames();
     } catch (error) {
       console.error('Error sending message:', error);
@@ -630,19 +670,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Placeholder functions for game mechanics - implement according to your game rules
   const playCard = async (gameId: string, playerId: string, card: Card): Promise<void> => {
-    // Implementation for playing a card
     console.log("Card played", gameId, playerId, card);
   };
 
   const declareTrump = async (gameId: string, playerId: string, suit: string, length: number): Promise<void> => {
-    // Implementation for declaring trump
     console.log("Trump declared", gameId, playerId, suit, length);
   };
 
   const passTrump = async (gameId: string, playerId: string): Promise<void> => {
-    // Implementation for passing on trump bidding
     console.log("Trump passed", gameId, playerId);
   };
 
