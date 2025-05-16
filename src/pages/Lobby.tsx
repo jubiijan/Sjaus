@@ -4,11 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { GameVariant } from '../types/Game';
 import GameList from '../components/lobby/GameList';
-import { AlertTriangle, RefreshCw, Wifi } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Wifi, Users } from 'lucide-react';
 
 const Lobby: React.FC = () => {
   const { currentUser, isAdmin } = useAuth();
-  const { games = [], createGame, joinGame, startGame, deleteGame, isLoading, error, fetchGames, connectionStatus } = useGame();
+  const { games = [], createGame, joinGame, startGame, deleteGame, isLoading, error, fetchGames, connectionStatus, onlinePlayers } = useGame();
   const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newGameName, setNewGameName] = useState('');
@@ -16,6 +16,8 @@ const Lobby: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const totalOnlinePlayers = Object.values(onlinePlayers).flat().length;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -76,15 +78,23 @@ const Lobby: React.FC = () => {
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
             <h1 className="text-3xl font-bold text-white">Game Lobby</h1>
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-              connectionStatus === 'connected'
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-orange-500/10 text-orange-400'
-            }`}>
-              <Wifi className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {connectionStatus === 'connected' ? 'CONNECTED' : 'Connecting...'}
-              </span>
+            <div className="flex items-center gap-4">
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                connectionStatus === 'connected'
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-orange-500/10 text-orange-400'
+              }`}>
+                <Wifi className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {connectionStatus === 'connected' ? 'Connected' : 'Connecting...'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#1E5631]/10 text-[#2D7A47]">
+                <Users className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {totalOnlinePlayers} {totalOnlinePlayers === 1 ? 'player' : 'players'} online
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex gap-4">
