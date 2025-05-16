@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Game, GameState, GameVariant } from '../types/Game';
+import { Game, GameState, GameVariant, Card } from '../types/Game';
 import { supabase } from '../lib/supabase';
 import { AuthContext } from './AuthContext';
 
@@ -19,6 +19,7 @@ interface GameContextType {
   sendMessage: (gameId: string, playerId: string, text: string) => Promise<void>;
   subscribeToGame: (gameId: string) => void;
   unsubscribeFromGame: (gameId: string) => void;
+  playCard: (gameId: string, playerId: string, card: Card) => Promise<void>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -545,6 +546,87 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const playCard = async (gameId: string, playerId: string, card: Card) => {
+    if (!currentUser) throw new Error('No user logged in');
+    if (!supabase) throw new Error('Supabase client is not initialized');
+
+    try {
+      setError(null);
+
+      // Optimistically update local state
+      setGames(prevGames => 
+        prevGames.map(game => {
+          if (game.id === gameId) {
+            const playerIndex = game.players.findIndex(p => p.id === playerId);
+            if (playerIndex === -1) return game;
+
+            const updatedPlayers = [...game.players];
+            const player = { ...updatedPlayers[playerIndex] };
+            
+            // Remove card from hand
+            player.hand = player.hand.filter(c => 
+              c.suit !== card.suit || c.rank !== card.rank
+            );
+            
+            updatedPlayers[playerIndex] = player;
+
+            return {
+              ...game,
+              players: updatedPlayers,
+              currentTrick: [...(game.currentTrick || []), { playerId, card }]
+            };
+          }
+          return game;
+        })
+      );
+
+      // Send move to server
+      const { error: moveError } = await supabase
+        .from('game_moves')
+        .insert({
+          game_id: gameId,
+          player_id: playerId,
+          card_played: card,
+          timestamp: new Date().toISOString()
+        });
+
+      if (moveError) throw moveError;
+
+    } catch (error) {
+      console.error('Error playing card:', error);
+      
+      // Revert optimistic update
+      setGames(prevGames => 
+        prevGames.map(game => {
+          if (game.id === gameId) {
+            const playerIndex = game.players.findIndex(p => p.id === playerId);
+            if (playerIndex === -1) return game;
+
+            const updatedPlayers = [...game.players];
+            const player = { ...updatedPlayers[playerIndex] };
+            
+            // Add card back to hand
+            player.hand = [...player.hand, card];
+            
+            updatedPlayers[playerIndex] = player;
+
+            return {
+              ...game,
+              players: updatedPlayers,
+              currentTrick: (game.currentTrick || []).filter(played => 
+                played.card.suit !== card.suit || played.card.rank !== card.rank
+              )
+            };
+          }
+          return game;
+        })
+      );
+
+      setError('Failed to play card. Please try again.');
+      throw error;
+    }
+  };
+
   const value = {
     games,
     currentGame,
@@ -560,7 +642,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     startGame,
     sendMessage,
     subscribeToGame,
-    unsubscribeFromGame
+    unsubscribeFromGame,
+    playCard
   };
 
   return (
