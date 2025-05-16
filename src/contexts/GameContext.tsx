@@ -475,16 +475,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!session) throw new Error('No active session');
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-operations`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'start',
+          action: 'updateGameState',
           gameId,
-          userId: currentUser.id
+          userId: currentUser.id,
+          data: {
+            state: 'bidding',
+            currentPlayer: currentUser.id
+          }
         })
       });
 
@@ -564,7 +568,5 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export { GameContext };
-
-export { GameProvider }
-
-export { useGame }
+export { GameProvider };
+export { useGame };
