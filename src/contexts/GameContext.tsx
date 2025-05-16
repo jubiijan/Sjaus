@@ -35,7 +35,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   const { currentUser } = useAuth();
   
-  // Keep track of active subscriptions
   const gamesChannel = useRef<RealtimeChannel | null>(null);
   const gameSpecificChannels = useRef<Record<string, RealtimeChannel>>({});
   const presenceChannel = useRef<RealtimeChannel | null>(null);
@@ -44,7 +43,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchQueue = useRef<boolean>(false);
   const autoRefreshInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Set up presence channel
   useEffect(() => {
     if (!currentUser) return;
 
@@ -72,7 +70,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     presenceChannel.current = channel;
 
-    // Set up auto-refresh interval (every 5 seconds)
     autoRefreshInterval.current = setInterval(() => {
       fetchGames();
     }, 5000);
@@ -236,13 +233,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteAllGames = async (): Promise<void> => {
-    const { error } = await supabase
-      .from('games')
-      .delete()
-      .eq('state', GameState.WAITING);
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    if (error) throw error;
-    await fetchGames();
+      const { error: updateError } = await supabase
+        .from('games')
+        .update({ 
+          deleted: true,
+          deleted_at: new Date().toISOString(),
+          state: GameState.COMPLETE
+        })
+        .eq('state', 'waiting');
+
+      if (updateError) throw updateError;
+
+      await fetchGames();
+    } catch (error) {
+      console.error('Error deleting all games:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const startGame = async (gameId: string): Promise<void> => {
