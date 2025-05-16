@@ -8,6 +8,7 @@ interface GameCardProps {
   isCreator: boolean;
   isAdmin: boolean;
   isInProgress: boolean;
+  onlinePlayersCount: number;
   onDelete: (gameId: string) => void;
   onJoin: (gameId: string) => void;
   onNavigate: (gameId: string) => void;
@@ -20,6 +21,7 @@ const GameCard: React.FC<GameCardProps> = ({
   isCreator,
   isAdmin,
   isInProgress,
+  onlinePlayersCount,
   onDelete,
   onJoin,
   onNavigate,
@@ -139,6 +141,9 @@ const GameCard: React.FC<GameCardProps> = ({
           </div>
           <div className="text-sm text-gray-400">
             {game.players?.length || 0}/{getMaxPlayers(game.variant)}
+            <span className="ml-2 text-green-400">
+              ({onlinePlayersCount} online)
+            </span>
           </div>
         </div>
         
