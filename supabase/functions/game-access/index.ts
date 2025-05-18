@@ -37,46 +37,22 @@ Deno.serve(async (req) => {
         const { data: games, error: gamesError } = await supabaseClient
           .from('games')
           .select(`
-            id,
-            name,
-            variant,
-            state,
-            created_by,
-            current_player_id,
-            trump_suit,
-            trump_declarer,
-            trump_length,
-            score,
-            deck,
-            table_cards,
-            current_trick,
-            tricks,
-            created_at,
-            updated_at,
-            deleted,
-            deleted_at,
-            game_players!inner (
-              user_id,
-              team,
-              hand,
-              tricks,
-              current_bid,
-              has_left,
-              users!inner (
+            *,
+            game_players(
+              user:users(
                 id,
                 name,
                 avatar
               )
             ),
-            game_messages (
+            game_messages(
               id,
-              user_id,
-              text,
-              created_at,
-              users!inner (
+              user:users(
                 id,
                 name
-              )
+              ),
+              text,
+              created_at
             )
           `)
           .eq('deleted', false)
@@ -88,14 +64,14 @@ Deno.serve(async (req) => {
         const transformedGames = games.map(game => ({
           ...game,
           players: game.game_players.map(p => ({
-            id: p.users.id,
-            name: p.users.name,
-            avatar: p.users.avatar
+            id: p.user.id,
+            name: p.user.name,
+            avatar: p.user.avatar
           })),
           messages: game.game_messages.map(m => ({
             id: m.id,
-            playerId: m.users.id,
-            playerName: m.users.name,
+            playerId: m.user.id,
+            playerName: m.user.name,
             text: m.text,
             timestamp: m.created_at
           }))
@@ -107,14 +83,14 @@ Deno.serve(async (req) => {
       }
 
       case 'create': {
-        // Start a transaction
-        const { data: newGame, error: createError } = await supabaseClient
+        // Create new game
+        const { data: game, error: createError } = await supabaseClient
           .from('games')
           .insert({
-            name: name || `${user.user_metadata.name}'s Game`,
+            name,
             variant,
-            created_by: userId,
             state: 'waiting',
+            created_by: userId,
             deleted: false
           })
           .select()
@@ -122,57 +98,48 @@ Deno.serve(async (req) => {
 
         if (createError) throw createError;
 
-        // Add the creator as the first player
+        // Add creator as first player
         const { error: playerError } = await supabaseClient
           .from('game_players')
           .insert({
-            game_id: newGame.id,
+            game_id: game.id,
             user_id: userId,
-            team: null,
-            hand: [],
-            tricks: [],
-            current_bid: null,
+            hand: '[]',
+            tricks: '[]',
             has_left: false
           });
 
         if (playerError) throw playerError;
 
-        // Get the full game data including the player
-        const { data: fullGame, error: fullGameError } = await supabaseClient
+        // Get the created game with player info
+        const { data: fullGame, error: getError } = await supabaseClient
           .from('games')
           .select(`
             *,
-            game_players!inner (
-              user_id,
-              team,
-              hand,
-              tricks,
-              current_bid,
-              has_left,
-              users!inner (
+            game_players(
+              user:users(
                 id,
                 name,
                 avatar
               )
             )
           `)
-          .eq('id', newGame.id)
+          .eq('id', game.id)
           .single();
 
-        if (fullGameError) throw fullGameError;
+        if (getError) throw getError;
 
-        // Transform the response to match the expected format
-        const response = {
+        // Transform to expected format
+        const transformedGame = {
           ...fullGame,
           players: fullGame.game_players.map(p => ({
-            id: p.users.id,
-            name: p.users.name,
-            avatar: p.users.avatar
-          })),
-          messages: []
+            id: p.user.id,
+            name: p.user.name,
+            avatar: p.user.avatar
+          }))
         };
 
-        return new Response(JSON.stringify(response), {
+        return new Response(JSON.stringify(transformedGame), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -209,10 +176,8 @@ Deno.serve(async (req) => {
           .insert({
             game_id: gameId,
             user_id: userId,
-            team: null,
-            hand: [],
-            tricks: [],
-            current_bid: null,
+            hand: '[]',
+            tricks: '[]',
             has_left: false
           });
 
