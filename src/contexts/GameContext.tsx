@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Game, GameState, GameVariant, Card as CardType, Message } from '../types/Game';
+import { Game, GameState, GameVariant, Card as CardType } from '../types/Game';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+
+interface CreateGameParams {
+  name: string;
+  variant: GameVariant;
+}
 
 interface GameContextType {
   games: Game[];
@@ -11,7 +16,7 @@ interface GameContextType {
   error: string | null;
   connectionStatus: 'connected' | 'disconnected';
   onlinePlayers: Record<string, { user_id: string; username: string; online_at: string }[]>;
-  createGame: (variant: GameVariant, name: string) => Promise<string>;
+  createGame: (params: CreateGameParams) => Promise<string>;
   joinGame: (gameId: string) => Promise<void>;
   leaveGame: (gameId: string) => Promise<void>;
   fetchGames: () => Promise<void>;
@@ -109,7 +114,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser]);
 
-  const createGame = async (variant: GameVariant, name: string): Promise<string> => {
+  const createGame = async ({ name, variant }: CreateGameParams): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
 
     try {
