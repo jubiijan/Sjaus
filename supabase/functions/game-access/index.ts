@@ -107,56 +107,72 @@ Deno.serve(async (req) => {
       }
 
       case 'create': {
-        // Ensure we have a valid game name
-        const defaultGameName = `${user.user_metadata.name}'s Game`;
-        const gameName = (name && name.trim()) || defaultGameName;
-
-        // Create the game with the validated name
+        // Start a transaction
         const { data: newGame, error: createError } = await supabaseClient
           .from('games')
           .insert({
-            name: gameName,
+            name: name || `${user.user_metadata.name}'s Game`,
             variant,
             created_by: userId,
             state: 'waiting',
             deleted: false
           })
-          .select('id, name, variant, state, created_by, created_at')
+          .select()
           .single();
 
         if (createError) throw createError;
 
-        // Add creator as first player
+        // Add the creator as the first player
         const { error: playerError } = await supabaseClient
           .from('game_players')
           .insert({
             game_id: newGame.id,
-            user_id: userId
+            user_id: userId,
+            team: null,
+            hand: [],
+            tricks: [],
+            current_bid: null,
+            has_left: false
           });
 
         if (playerError) throw playerError;
 
-        // Get user data for the creator
-        const { data: userData, error: userDataError } = await supabaseClient
-          .from('users')
-          .select('id, name, avatar')
-          .eq('id', userId)
+        // Get the full game data including the player
+        const { data: fullGame, error: fullGameError } = await supabaseClient
+          .from('games')
+          .select(`
+            *,
+            game_players!inner (
+              user_id,
+              team,
+              hand,
+              tricks,
+              current_bid,
+              has_left,
+              users!inner (
+                id,
+                name,
+                avatar
+              )
+            )
+          `)
+          .eq('id', newGame.id)
           .single();
 
-        if (userDataError) throw userDataError;
+        if (fullGameError) throw fullGameError;
 
-        // Return the game with the creator as the first player
-        const gameWithPlayers = {
-          ...newGame,
-          players: [{
-            id: userData.id,
-            name: userData.name,
-            avatar: userData.avatar
-          }],
+        // Transform the response to match the expected format
+        const response = {
+          ...fullGame,
+          players: fullGame.game_players.map(p => ({
+            id: p.users.id,
+            name: p.users.name,
+            avatar: p.users.avatar
+          })),
           messages: []
         };
 
-        return new Response(JSON.stringify(gameWithPlayers), {
+        return new Response(JSON.stringify(response), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -192,7 +208,12 @@ Deno.serve(async (req) => {
           .from('game_players')
           .insert({
             game_id: gameId,
-            user_id: userId
+            user_id: userId,
+            team: null,
+            hand: [],
+            tricks: [],
+            current_bid: null,
+            has_left: false
           });
 
         if (joinError) throw joinError;
