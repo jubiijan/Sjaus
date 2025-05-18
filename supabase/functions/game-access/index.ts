@@ -107,11 +107,15 @@ Deno.serve(async (req) => {
       }
 
       case 'create': {
-        // Create the game first
+        // Ensure we have a valid game name
+        const defaultGameName = `${user.user_metadata.name}'s Game`;
+        const gameName = (name && name.trim()) || defaultGameName;
+
+        // Create the game with the validated name
         const { data: newGame, error: createError } = await supabaseClient
           .from('games')
           .insert({
-            name,
+            name: gameName,
             variant,
             created_by: userId,
             state: 'waiting',

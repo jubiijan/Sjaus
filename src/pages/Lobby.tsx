@@ -32,14 +32,17 @@ const Lobby: React.FC = () => {
 
   const handleCreateGame = async () => {
     try {
-      // Ensure we have a valid game name by using the default if newGameName is empty
-      const gameName = newGameName.trim() || `${currentUser.name}'s Game`;
+      // Ensure we have a valid game name
+      const defaultGameName = `${currentUser.name}'s Game`;
+      const gameName = newGameName.trim() || defaultGameName;
       
       const gameId = await createGame({
-        variant: newGameVariant,
-        name: gameName // Use the validated game name
+        name: gameName,
+        variant: newGameVariant
       });
+      
       setIsCreateModalOpen(false);
+      setNewGameName(''); // Reset the game name input
       navigate(`/game/${gameId}`);
     } catch (error) {
       console.error('Failed to create game:', error);
@@ -222,7 +225,10 @@ const Lobby: React.FC = () => {
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setIsCreateModalOpen(false)}
+                    onClick={() => {
+                      setIsCreateModalOpen(false);
+                      setNewGameName(''); // Reset the game name input when closing
+                    }}
                     className="bg-[#334155] hover:bg-[#475569] text-white font-bold py-2 px-4 rounded-lg"
                   >
                     Cancel
