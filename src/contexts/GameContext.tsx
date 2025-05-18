@@ -7,6 +7,8 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 interface CreateGameParams {
   name: string;
   variant: GameVariant;
+  isPrivate?: boolean;
+  password?: string;
 }
 
 interface GameContextType {
@@ -114,7 +116,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser]);
 
-  const createGame = async ({ name, variant }: CreateGameParams): Promise<string> => {
+  const createGame = async (params: CreateGameParams): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
 
     try {
@@ -125,8 +127,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
-          name: name.trim(),
-          variant,
+          name: params.name.trim(),
+          variant: params.variant,
           state: GameState.WAITING,
           created_by: currentUser.id
         })
@@ -165,6 +167,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
+      // Check if player is already in the game
+      const { data: existingPlayer, error: checkError } = await supabase
+        .from('game_players')
+        .select('*')
+        .eq('game_id', gameId)
+        .eq('user_id', currentUser.id)
+        .single();
+
+      if (!checkError && existingPlayer) {
+        // Already a player, just subscribe
+        subscribeToGame(gameId);
+        await fetchGames();
+        return;
+      }
+
+      // Join the game
       const { error: joinError } = await supabase
         .from('game_players')
         .insert({
