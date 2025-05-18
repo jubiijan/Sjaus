@@ -35,9 +35,11 @@ const Lobby: React.FC = () => {
     try {
       setCreateError(null);
       
-      // Ensure we have a valid game name by trimming whitespace
-      const trimmedName = newGameName.trim();
-      const defaultGameName = `${currentUser.name}'s Game`;
+      // Ensure newGameName is a string and get default name
+      const defaultGameName = currentUser?.name ? `${currentUser.name}'s Game` : 'New Game';
+      
+      // Safely handle the game name, ensuring it's a string before trimming
+      const trimmedName = typeof newGameName === 'string' ? newGameName.trim() : '';
       
       // Use the trimmed name if it's not empty, otherwise use the default name
       const gameName = trimmedName || defaultGameName;
@@ -181,7 +183,7 @@ const Lobby: React.FC = () => {
                     type="text"
                     value={newGameName}
                     onChange={(e) => setNewGameName(e.target.value)}
-                    placeholder={`${currentUser.name}'s Game`}
+                    placeholder={currentUser?.name ? `${currentUser.name}'s Game` : 'New Game'}
                     className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
                   />
                 </div>
