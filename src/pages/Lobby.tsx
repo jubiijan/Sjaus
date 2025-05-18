@@ -32,9 +32,12 @@ const Lobby: React.FC = () => {
 
   const handleCreateGame = async () => {
     try {
+      // Ensure we have a valid game name by using the default if newGameName is empty
+      const gameName = newGameName.trim() || `${currentUser.name}'s Game`;
+      
       const gameId = await createGame({
         variant: newGameVariant,
-        name: newGameName || `${currentUser.name}'s Game`
+        name: gameName // Use the validated game name
       });
       setIsCreateModalOpen(false);
       navigate(`/game/${gameId}`);
