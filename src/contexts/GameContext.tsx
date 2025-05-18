@@ -165,32 +165,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // Check if game exists and is in waiting state
-      const { data: game, error: gameError } = await supabase
-        .from('games')
-        .select('*, game_players(*)')
-        .eq('id', gameId)
-        .single();
-
-      if (gameError) throw new Error('Game not found');
-      if (game.state !== GameState.WAITING) throw new Error('Game is not accepting new players');
-
-      // Check if player is already in the game
-      const existingPlayer = game.game_players.find((p: any) => p.user_id === currentUser.id);
-      if (existingPlayer) {
-        subscribeToGame(gameId);
-        await fetchGames();
-        return;
-      }
-
-      // Check if game is full
-      const maxPlayers = game.variant === GameVariant.FOUR_PLAYER ? 4 : 
-                        game.variant === GameVariant.THREE_PLAYER ? 3 : 2;
-      if (game.game_players.length >= maxPlayers) {
-        throw new Error('Game is full');
-      }
-
-      // Add player to game
       const { error: joinError } = await supabase
         .from('game_players')
         .insert({
@@ -259,47 +233,53 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
 
     try {
-      const { data, error } = await supabase
+      const { data: gamesData, error: gamesError } = await supabase
         .from('games')
         .select(`
           *,
-          game_players(
-            user:users(
+          game_players!inner (
+            user_id,
+            hand,
+            tricks,
+            has_left,
+            users!inner (
               id,
               name,
               avatar
             )
           ),
-          game_messages(
+          game_messages (
             id,
-            user:users(
+            user_id,
+            text,
+            created_at,
+            users!inner (
               id,
               name
-            ),
-            text,
-            created_at
+            )
           )
         `)
         .eq('deleted', false)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (gamesError) throw gamesError;
 
-      const transformedGames: Game[] = (data || []).map((game) => {
-        const players = game.game_players.map((p: any) => ({
-          id: p.user.id,
-          name: p.user.name,
-          avatar: p.user.avatar,
-          hand: [],
-          tricks: []
+      const transformedGames = (gamesData || []).map((game) => {
+        const players = game.game_players.map((player) => ({
+          id: player.users.id,
+          name: player.users.name,
+          avatar: player.users.avatar,
+          hand: player.hand || [],
+          tricks: player.tricks || [],
+          hasLeft: player.has_left
         }));
 
-        const messages = game.game_messages.map((m: any) => ({
-          id: m.id,
-          playerId: m.user.id,
-          playerName: m.user.name,
-          text: m.text,
-          timestamp: m.created_at
+        const messages = (game.game_messages || []).map((message) => ({
+          id: message.id,
+          playerId: message.users.id,
+          playerName: message.users.name,
+          text: message.text,
+          timestamp: message.created_at
         }));
 
         return {
@@ -315,6 +295,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setGames(transformedGames);
+      
       if (currentGame) {
         const updatedCurrentGame = transformedGames.find(game => game.id === currentGame.id);
         if (updatedCurrentGame) {
