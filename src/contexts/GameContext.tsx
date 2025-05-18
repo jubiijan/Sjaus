@@ -140,7 +140,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('game_players')
         .insert({
           game_id: game.id,
-          user_id: currentUser.id
+          user_id: currentUser.id,
+          hand: '[]',
+          tricks: '[]',
+          has_left: false
         });
 
       if (playerError) throw playerError;
