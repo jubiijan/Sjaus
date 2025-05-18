@@ -243,24 +243,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setError(null);
       
+      // First, create the game
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
           name,
           variant,
           state: 'waiting',
-          created_by: currentUser.id
+          created_by: currentUser.id,
+          score: { team1: 24, team2: 24 },
+          deck: [],
+          table_cards: [],
+          current_trick: [],
+          tricks: []
         })
         .select()
         .single();
 
       if (gameError) throw gameError;
 
+      // Then, add the creator as the first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
           game_id: game.id,
-          user_id: currentUser.id
+          user_id: currentUser.id,
+          hand: [],
+          tricks: []
         });
 
       if (playerError) throw playerError;
@@ -308,7 +317,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .from('game_players')
           .insert({
             game_id: gameId,
-            user_id: currentUser.id
+            user_id: currentUser.id,
+            hand: [],
+            tricks: []
           });
 
         if (joinError) throw joinError;
@@ -386,8 +397,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('games')
         .select(`
           *,
-          game_players(
-            user:users(
+          game_players!inner(
+            user_id,
+            team,
+            hand,
+            tricks,
+            current_bid,
+            has_left,
+            users!inner(
               id,
               name,
               avatar
@@ -395,12 +412,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ),
           game_messages(
             id,
-            user:users(
+            user_id,
+            text,
+            created_at,
+            users!inner(
               id,
               name
-            ),
-            text,
-            created_at
+            )
           )
         `)
         .eq('deleted', false)
@@ -410,17 +428,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const transformedGames: Game[] = (data || []).map((game) => {
         const players = game.game_players.map((p: any) => ({
-          id: p.user.id,
-          name: p.user.name,
-          avatar: p.user.avatar,
-          hand: [],
-          tricks: []
+          id: p.users.id,
+          name: p.users.name,
+          avatar: p.users.avatar,
+          team: p.team,
+          hand: p.hand || [],
+          tricks: p.tricks || [],
+          currentBid: p.current_bid,
+          hasLeft: p.has_left
         }));
 
         const messages = game.game_messages.map((m: any) => ({
           id: m.id,
-          playerId: m.user.id,
-          playerName: m.user.name,
+          playerId: m.users.id,
+          playerName: m.users.name,
           text: m.text,
           timestamp: m.created_at
         }));
