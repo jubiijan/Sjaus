@@ -35,17 +35,15 @@ const Lobby: React.FC = () => {
     try {
       setCreateError(null);
       
-      // Ensure we have a valid game name
+      // Ensure we have a valid game name by trimming whitespace
       const trimmedName = newGameName.trim();
       const defaultGameName = `${currentUser.name}'s Game`;
+      
+      // Use the trimmed name if it's not empty, otherwise use the default name
       const gameName = trimmedName || defaultGameName;
       
-      if (!gameName) {
-        throw new Error('Game name cannot be empty');
-      }
-
       const gameId = await createGame({
-        name: gameName, // Use the validated game name here
+        name: gameName,
         variant: newGameVariant
       });
       
