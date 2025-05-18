@@ -38,8 +38,8 @@ const Lobby: React.FC = () => {
       // Ensure newGameName is a string and get default name
       const defaultGameName = currentUser?.name ? `${currentUser.name}'s Game` : 'New Game';
       
-      // Safely handle the game name, ensuring it's a string before trimming
-      const trimmedName = typeof newGameName === 'string' ? newGameName.trim() : '';
+      // Safely handle the game name by ensuring it's a string before trimming
+      const trimmedName = (newGameName || '').trim();
       
       // Use the trimmed name if it's not empty, otherwise use the default name
       const gameName = trimmedName || defaultGameName;
