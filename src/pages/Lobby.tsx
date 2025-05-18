@@ -35,13 +35,13 @@ const Lobby: React.FC = () => {
     try {
       setCreateError(null);
       
-      // Ensure newGameName is a string and get default name
+      // Get default game name based on user's name
       const defaultGameName = currentUser?.name ? `${currentUser.name}'s Game` : 'New Game';
       
-      // Ensure newGameName is a string before trimming
-      const trimmedName = typeof newGameName === 'string' ? newGameName.trim() : '';
+      // Ensure newGameName is a string and trim it, falling back to empty string if undefined
+      const trimmedName = (newGameName || '').trim();
       
-      // Use the trimmed name if it's not empty, otherwise use the default name
+      // Use trimmed name if not empty, otherwise use default name
       const gameName = trimmedName || defaultGameName;
       
       const gameId = await createGame({
