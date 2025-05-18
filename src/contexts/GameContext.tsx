@@ -27,7 +27,11 @@ interface GameContextType {
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
-const OPERATION_TIMEOUT = 10000; // 10 seconds timeout for operations
+
+// Define constants for timeouts and retries
+const OPERATION_TIMEOUT = 15000; // 15 seconds
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY = 1000;
 
 export const useGame = () => {
   const context = useContext(GameContext);
@@ -36,11 +40,6 @@ export const useGame = () => {
   }
   return context;
 };
-
-// Define constants for timeouts and retries
-const OPERATION_TIMEOUT = 15000; // 15 seconds
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 1000;
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [games, setGames] = useState<Game[]>([]);
