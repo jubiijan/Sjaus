@@ -28,8 +28,7 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-// Define constants for timeouts and retries
-const OPERATION_TIMEOUT = 15000; // 15 seconds
+const OPERATION_TIMEOUT = 15000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000;
 
@@ -69,10 +68,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setConnectionStatus('disconnected');
 
-    // Set up presence channel for online users
     const setupPresence = async () => {
       try {
-        // Clean up any existing channel
         if (presenceChannel.current) {
           await presenceChannel.current.unsubscribe();
           presenceChannel.current = null;
@@ -119,10 +116,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Set up games channel for all games updates
     const setupGamesChannel = async () => {
       try {
-        // Clean up any existing channel
         if (gamesChannel.current) {
           await gamesChannel.current.unsubscribe();
           gamesChannel.current = null;
@@ -158,7 +153,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Initialize
     const initialize = async () => {
       try {
         setIsLoading(true);
@@ -175,14 +169,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initialize();
 
-    // Set up auto-refresh
     autoRefreshInterval.current = setInterval(() => {
       if (connectionStatus === 'connected') {
         fetchGames();
       }
     }, 10000);
 
-    // Initial connection timeout as fallback
     initialConnectionTimeout.current = setTimeout(() => {
       if (connectionStatus === 'disconnected') {
         console.log('Connection timeout, forcing connected status');
@@ -191,7 +183,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 5000);
 
     return () => {
-      // Clean up resources
       const cleanup = async () => {
         if (presenceChannel.current) {
           await presenceChannel.current.unsubscribe();
@@ -233,7 +224,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser?.id]);
 
-  // Helper function with retry logic
   const withRetry = async <T,>(operation: () => Promise<T>, retries = MAX_RETRY_ATTEMPTS): Promise<T> => {
     try {
       return await operation();
@@ -250,44 +240,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createGame = async (variant: GameVariant, name: string): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
 
-    return withRetry(async () => {
-      try {
-        setError(null);
-        
-        // Create game directly with SQL
-        const { data, error } = await supabase
-          .from('games')
-          .insert({
-            name,
-            variant,
-            state: 'waiting',
-            created_by: currentUser.id
-          })
-          .select()
-          .single();
+    try {
+      setError(null);
+      
+      const { data: game, error: gameError } = await supabase
+        .from('games')
+        .insert({
+          name,
+          variant,
+          state: 'waiting',
+          created_by: currentUser.id
+        })
+        .select()
+        .single();
 
-        if (error) throw error;
+      if (gameError) throw gameError;
 
-        // Add creator as first player
-        const { error: playerError } = await supabase
-          .from('game_players')
-          .insert({
-            game_id: data.id,
-            user_id: currentUser.id
-          });
+      const { error: playerError } = await supabase
+        .from('game_players')
+        .insert({
+          game_id: game.id,
+          user_id: currentUser.id
+        });
 
-        if (playerError) throw playerError;
+      if (playerError) throw playerError;
 
-        // Refresh games list
-        await fetchGames();
-        
-        return data.id;
-      } catch (error) {
-        console.error('Error creating game:', error);
-        setError(error instanceof Error ? error.message : 'Failed to create game');
-        throw error;
-      }
-    });
+      await fetchGames();
+      return game.id;
+    } catch (error) {
+      console.error('Error creating game:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create game');
+      throw error;
+    }
   };
 
   const joinGame = async (gameId: string): Promise<void> => {
@@ -298,7 +282,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Check if game exists
         const { data: game, error: gameError } = await supabase
           .from('games')
           .select('*, game_players(*)')
@@ -307,7 +290,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (gameError) throw new Error('Game not found');
 
-        // Check if player is already in the game
         const existingPlayer = game.game_players.find((p: any) => p.user_id === currentUser.id);
         if (existingPlayer) {
           console.log('User already in game');
@@ -316,14 +298,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // Check if game is full
         const maxPlayers = game.variant === 'four-player' ? 4 : 
                            game.variant === 'three-player' ? 3 : 2;
         if (game.game_players.length >= maxPlayers) {
           throw new Error('Game is full');
         }
 
-        // Add player to game
         const { error: joinError } = await supabase
           .from('game_players')
           .insert({
@@ -333,10 +313,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (joinError) throw joinError;
 
-        // Subscribe to game updates
         subscribeToGame(gameId);
-        
-        // Refresh games list
         await fetchGames();
       } catch (error) {
         console.error('Error joining game:', error);
@@ -356,7 +333,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Remove player from game
         const { error: leaveError } = await supabase
           .from('game_players')
           .delete()
@@ -364,15 +340,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (leaveError) throw leaveError;
 
-        // Unsubscribe from game updates
         unsubscribeFromGame(gameId);
         
-        // If this is the current game, clear it
         if (currentGame?.id === gameId) {
           setCurrentGame(null);
         }
         
-        // Refresh games list
         await fetchGames();
       } catch (error) {
         console.error('Error leaving game:', error);
@@ -391,7 +364,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const now = Date.now();
-    // Throttle fetches to at most once per second
     if (now - lastFetchTime.current < 1000) {
       if (!fetchQueue.current) {
         fetchQueue.current = true;
@@ -406,84 +378,79 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     lastFetchTime.current = now;
 
-    return withRetry(async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+    try {
+      setIsLoading(true);
+      setError(null);
 
-        // Fetch all active games
-        const { data, error } = await supabase
-          .from('games')
-          .select(`
-            *,
-            game_players(
-              user:users(
-                id,
-                name,
-                avatar
-              )
-            ),
-            game_messages(
+      const { data, error } = await supabase
+        .from('games')
+        .select(`
+          *,
+          game_players(
+            user:users(
               id,
-              user:users(
-                id,
-                name
-              ),
-              text,
-              created_at
+              name,
+              avatar
             )
-          `)
-          .eq('deleted', false)
-          .order('created_at', { ascending: false });
+          ),
+          game_messages(
+            id,
+            user:users(
+              id,
+              name
+            ),
+            text,
+            created_at
+          )
+        `)
+        .eq('deleted', false)
+        .order('created_at', { ascending: false });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        // Transform the data to match the expected format
-        const transformedGames: Game[] = (data || []).map((game) => {
-          const players = game.game_players.map((p: any) => ({
-            id: p.user.id,
-            name: p.user.name,
-            avatar: p.user.avatar,
-            hand: [],
-            tricks: []
-          }));
+      const transformedGames: Game[] = (data || []).map((game) => {
+        const players = game.game_players.map((p: any) => ({
+          id: p.user.id,
+          name: p.user.name,
+          avatar: p.user.avatar,
+          hand: [],
+          tricks: []
+        }));
 
-          const messages = game.game_messages.map((m: any) => ({
-            id: m.id,
-            playerId: m.user.id,
-            playerName: m.user.name,
-            text: m.text,
-            timestamp: m.created_at
-          }));
+        const messages = game.game_messages.map((m: any) => ({
+          id: m.id,
+          playerId: m.user.id,
+          playerName: m.user.name,
+          text: m.text,
+          timestamp: m.created_at
+        }));
 
-          return {
-            ...game,
-            players,
-            messages,
-            score: game.score || { team1: 24, team2: 24 },
-            currentTrick: game.current_trick || [],
-            tricks: game.tricks || [],
-            deck: game.deck || [],
-            tableCards: game.table_cards || []
-          };
-        });
+        return {
+          ...game,
+          players,
+          messages,
+          score: game.score || { team1: 24, team2: 24 },
+          currentTrick: game.current_trick || [],
+          tricks: game.tricks || [],
+          deck: game.deck || [],
+          tableCards: game.table_cards || []
+        };
+      });
 
-        setGames(transformedGames);
-        
-        // Update current game if needed
-        if (currentGame) {
-          const updatedCurrentGame = transformedGames.find(game => game.id === currentGame.id);
-          if (updatedCurrentGame) {
-            setCurrentGame(updatedCurrentGame);
-          }
+      setGames(transformedGames);
+      
+      if (currentGame) {
+        const updatedCurrentGame = transformedGames.find(game => game.id === currentGame.id);
+        if (updatedCurrentGame) {
+          setCurrentGame(updatedCurrentGame);
         }
-      } catch (error) {
-        console.error('Error fetching games:', error);
-        setError(error instanceof Error ? error.message : 'Failed to fetch games');
-      } finally {
-        setIsLoading(false);
       }
-    });
+    } catch (error) {
+      console.error('Error fetching games:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch games');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const subscribeToGame = (gameId: string) => {
@@ -492,7 +459,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const channel = supabase.channel(`game:${gameId}`);
 
-      // Subscribe to changes on the games table for this specific game
       channel.on(
         'postgres_changes',
         {
@@ -507,7 +473,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       );
 
-      // Subscribe to changes on the game_players table for this game
       channel.on(
         'postgres_changes',
         {
@@ -522,7 +487,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       );
 
-      // Subscribe to changes on the game_messages table for this game
       channel.on(
         'postgres_changes',
         {
@@ -566,7 +530,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Check if user is creator or admin
         const { data: game, error: gameError } = await supabase
           .from('games')
           .select('created_by')
@@ -579,7 +542,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Only the game creator or an admin can delete a game');
         }
 
-        // Soft delete the game
         const { error: deleteError } = await supabase
           .from('games')
           .update({
@@ -590,15 +552,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (deleteError) throw deleteError;
 
-        // Remove the game from local state
         setGames(prev => prev.filter(g => g.id !== gameId));
         
-        // If this was the current game, clear it
         if (currentGame?.id === gameId) {
           setCurrentGame(null);
         }
         
-        // Unsubscribe from game updates
         unsubscribeFromGame(gameId);
       } catch (error) {
         console.error('Error deleting game:', error);
@@ -620,7 +579,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Soft delete all games
         const { error: deleteError } = await supabase
           .from('games')
           .update({
@@ -631,7 +589,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (deleteError) throw deleteError;
 
-        // Refresh games list
         await fetchGames();
       } catch (error) {
         console.error('Error deleting all games:', error);
@@ -651,7 +608,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Check if user is the creator
         const { data: game, error: gameError } = await supabase
           .from('games')
           .select('created_by, game_players(*)')
@@ -664,12 +620,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Only the game creator can start the game');
         }
 
-        // Check if there are enough players
         if (game.game_players.length < 2) {
           throw new Error('At least 2 players are required to start the game');
         }
 
-        // Update game state to bidding
         const { error: updateError } = await supabase
           .from('games')
           .update({
@@ -681,7 +635,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (updateError) throw updateError;
 
-        // Refresh games list
         await fetchGames();
       } catch (error) {
         console.error('Error starting game:', error);
@@ -692,32 +645,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
   };
-  
+
   const playCard = async (gameId: string, userId: string, card: CardType): Promise<void> => {
-    // This is a placeholder for card playing functionality
-    // In a real implementation, this would update the game state with the played card
     console.log(`Player ${userId} played card ${card.suit} ${card.rank} in game ${gameId}`);
-    
-    // For now, just refresh games to update UI
     await fetchGames();
   };
-  
+
   const declareTrump = async (gameId: string, userId: string, suit: string, length: number): Promise<void> => {
-    // This is a placeholder for trump declaration functionality
     console.log(`Player ${userId} declared ${suit} as trump with length ${length} in game ${gameId}`);
-    
-    // For now, just refresh games to update UI
     await fetchGames();
   };
-  
+
   const passTrump = async (gameId: string, userId: string): Promise<void> => {
-    // This is a placeholder for passing trump bidding functionality
     console.log(`Player ${userId} passed on trump bidding in game ${gameId}`);
-    
-    // For now, just refresh games to update UI
     await fetchGames();
   };
-  
+
   const sendMessage = async (gameId: string, userId: string, text: string): Promise<void> => {
     if (!currentUser) throw new Error('User must be logged in to send messages');
 
@@ -726,7 +669,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(true);
         setError(null);
 
-        // Add message to game
         const { error: messageError } = await supabase
           .from('game_messages')
           .insert({
@@ -737,7 +679,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (messageError) throw messageError;
 
-        // Refresh games list
         await fetchGames();
       } catch (error) {
         console.error('Error sending message:', error);
