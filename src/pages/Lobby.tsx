@@ -32,7 +32,10 @@ const Lobby: React.FC = () => {
 
   const handleCreateGame = async () => {
     try {
-      const gameId = await createGame(newGameVariant, newGameName || `${currentUser.name}'s Game`);
+      const gameId = await createGame({
+        variant: newGameVariant,
+        name: newGameName || `${currentUser.name}'s Game`
+      });
       setIsCreateModalOpen(false);
       navigate(`/game/${gameId}`);
     } catch (error) {
@@ -71,7 +74,7 @@ const Lobby: React.FC = () => {
   // Filter games to show both waiting and in-progress games where the user is a player
   const availableGames = (games || []).filter(game => 
     game.state === 'waiting' || 
-    game.players?.some(player => player.id === currentUser.id)
+    game.game_players?.some(player => player.user_id === currentUser.id)
   );
 
   return (
