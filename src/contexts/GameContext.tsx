@@ -4,6 +4,11 @@ import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+interface CreateGameParams {
+  name: string;
+  variant: GameVariant;
+}
+
 interface GameContextType {
   games: Game[];
   currentGame: Game | null;
@@ -11,7 +16,7 @@ interface GameContextType {
   error: string | null;
   connectionStatus: 'connected' | 'disconnected';
   onlinePlayers: Record<string, { user_id: string; username: string; online_at: string }[]>;
-  createGame: (variant: GameVariant, name: string) => Promise<string>;
+  createGame: (params: CreateGameParams) => Promise<string>;
   joinGame: (gameId: string) => Promise<void>;
   leaveGame: (gameId: string) => Promise<void>;
   fetchGames: () => Promise<void>;
@@ -237,7 +242,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const createGame = async (variant: GameVariant, name: string): Promise<string> => {
+  const createGame = async ({ name, variant }: CreateGameParams): Promise<string> => {
     if (!currentUser) throw new Error('User must be logged in to create a game');
 
     try {
@@ -247,9 +252,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
-          name,
+          name: name.trim(),
           variant,
-          state: 'waiting',
+          state: GameState.WAITING,
           created_by: currentUser.id,
           score: { team1: 24, team2: 24 },
           deck: [],

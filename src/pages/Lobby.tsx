@@ -17,8 +17,8 @@ const Lobby: React.FC = () => {
   const [newGameVariant, setNewGameVariant] = useState<GameVariant>(GameVariant.FOUR_PLAYER);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const totalOnlinePlayers = Object.values(onlinePlayers).flat().length;
 
