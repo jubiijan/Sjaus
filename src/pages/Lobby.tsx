@@ -18,6 +18,7 @@ const Lobby: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const totalOnlinePlayers = Object.values(onlinePlayers).flat().length;
 
@@ -32,10 +33,17 @@ const Lobby: React.FC = () => {
 
   const handleCreateGame = async () => {
     try {
-      // Ensure we have a valid game name
-      const defaultGameName = `${currentUser.name}'s Game`;
-      const gameName = newGameName.trim() || defaultGameName;
+      setCreateError(null);
       
+      // Ensure we have a valid game name
+      const trimmedName = newGameName.trim();
+      const defaultGameName = `${currentUser.name}'s Game`;
+      const gameName = trimmedName || defaultGameName;
+      
+      if (!gameName) {
+        throw new Error('Game name cannot be empty');
+      }
+
       const gameId = await createGame({
         name: gameName,
         variant: newGameVariant
@@ -46,6 +54,7 @@ const Lobby: React.FC = () => {
       navigate(`/game/${gameId}`);
     } catch (error) {
       console.error('Failed to create game:', error);
+      setCreateError(error instanceof Error ? error.message : 'Failed to create game');
     }
   };
 
@@ -120,7 +129,10 @@ const Lobby: React.FC = () => {
               <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setCreateError(null);
+              }}
               className="bg-[#1E5631] hover:bg-[#2D7A47] text-white font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200"
             >
               Create New Game
@@ -175,6 +187,12 @@ const Lobby: React.FC = () => {
                     className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
                   />
                 </div>
+
+                {createError && (
+                  <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+                    <p className="text-red-400 text-sm">{createError}</p>
+                  </div>
+                )}
                 
                 <div className="mb-6">
                   <label className="block text-white text-sm font-bold mb-2">
@@ -228,6 +246,7 @@ const Lobby: React.FC = () => {
                     onClick={() => {
                       setIsCreateModalOpen(false);
                       setNewGameName(''); // Reset the game name input when closing
+                      setCreateError(null);
                     }}
                     className="bg-[#334155] hover:bg-[#475569] text-white font-bold py-2 px-4 rounded-lg"
                   >
