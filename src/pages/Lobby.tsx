@@ -45,7 +45,7 @@ const Lobby: React.FC = () => {
       }
 
       const gameId = await createGame({
-        name: gameName,
+        name: gameName, // Use the validated game name here
         variant: newGameVariant
       });
       
