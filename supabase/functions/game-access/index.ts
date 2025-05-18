@@ -107,8 +107,8 @@ Deno.serve(async (req) => {
       }
 
       case 'create': {
-        // Start a transaction
-        const { data: game, error: createError } = await supabaseClient
+        // Create the game first
+        const { data: newGame, error: createError } = await supabaseClient
           .from('games')
           .insert({
             name,
@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
             state: 'waiting',
             deleted: false
           })
-          .select()
+          .select('id, name, variant, state, created_by, created_at')
           .single();
 
         if (createError) throw createError;
@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
         const { error: playerError } = await supabaseClient
           .from('game_players')
           .insert({
-            game_id: game.id,
+            game_id: newGame.id,
             user_id: userId
           });
 
@@ -142,16 +142,17 @@ Deno.serve(async (req) => {
         if (userDataError) throw userDataError;
 
         // Return the game with the creator as the first player
-        const transformedGame = {
-          ...game,
+        const gameWithPlayers = {
+          ...newGame,
           players: [{
             id: userData.id,
             name: userData.name,
             avatar: userData.avatar
-          }]
+          }],
+          messages: []
         };
 
-        return new Response(JSON.stringify(transformedGame), {
+        return new Response(JSON.stringify(gameWithPlayers), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
