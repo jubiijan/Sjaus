@@ -118,8 +118,23 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       const data = await response.json();
 
       if (!response.ok) {
-        // Extract error message from response or use a default message
-        const errorMessage = data.error || data.message || 'Failed to create game';
+        // Extract error message from response
+        let errorMessage: string;
+        
+        if (data.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : data.error.message || 'Failed to create game';
+        } else if (data.message) {
+          errorMessage = data.message;
+        } else if (response.status === 429) {
+          errorMessage = 'Too many attempts. Please wait a moment and try again.';
+        } else if (response.status === 401) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (response.status >= 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = 'Failed to create game. Please try again.';
+        }
+        
         throw new Error(errorMessage);
       }
 
@@ -139,9 +154,17 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       console.error('Game creation error:', error);
       
       // Provide a more specific error message to the user
-      const errorMessage = error instanceof Error 
-        ? error.message
-        : 'An unexpected error occurred while creating the game. Please try again.';
+      let errorMessage: string;
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = (error as { message: string }).message;
+      } else {
+        errorMessage = 'An unexpected error occurred while creating the game. Please try again.';
+      }
       
       setError(errorMessage);
       setSuccess(false);
