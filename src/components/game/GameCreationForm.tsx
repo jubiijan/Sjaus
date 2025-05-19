@@ -76,25 +76,25 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
   const handleCreateGame = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate inputs
-    if (!nameValid || (usePassword && !passwordValid)) {
-      setError('Please fix the errors in the form before creating a game');
-      return;
-    }
-
-    if (!currentUser?.id) {
-      setError('You must be logged in to create a game');
-      return;
-    }
-
-    // Validate environment variables
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      console.error('Missing required environment variables');
-      setError('Configuration error. Please contact support.');
-      return;
-    }
-    
     try {
+      // Pre-request validation
+      if (!nameValid || (usePassword && !passwordValid)) {
+        setError('Please fix the errors in the form before creating a game');
+        return;
+      }
+
+      if (!currentUser?.id) {
+        setError('You must be logged in to create a game');
+        return;
+      }
+
+      // Environment variables validation
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+        console.error('Missing required environment variables');
+        setError('Configuration error. Please contact support.');
+        return;
+      }
+      
       setIsSubmitting(true);
       setError(null);
       
@@ -122,45 +122,64 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         body: JSON.stringify(gameOptions)
       });
 
-      // Log the full response for debugging
-      console.log('Game creation response:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      });
+      // Parse the response data
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        throw new Error('Server returned non-JSON response');
+      }
 
-      const data = await response.json();
-      console.log('Game creation data:', data);
-
+      // Handle non-200 responses
       if (!response.ok) {
-        // Extract error message from response with detailed fallbacks
         let errorMessage: string;
         
-        if (data.error && typeof data.error === 'object' && 'message' in data.error) {
+        // Try to extract error message from response
+        if (data?.error?.message) {
           errorMessage = data.error.message;
-        } else if (data.error && typeof data.error === 'string') {
+        } else if (data?.error && typeof data.error === 'string') {
           errorMessage = data.error;
-        } else if (data.message) {
+        } else if (data?.message) {
           errorMessage = data.message;
-        } else if (response.status === 429) {
-          errorMessage = 'Too many attempts. Please wait a moment and try again.';
-        } else if (response.status === 401) {
-          errorMessage = 'Your session has expired. Please log in again.';
-        } else if (response.status === 403) {
-          errorMessage = 'You do not have permission to create games.';
-        } else if (response.status === 404) {
-          errorMessage = 'Game creation service is currently unavailable.';
-        } else if (response.status >= 500) {
-          errorMessage = 'Server error. Please try again later.';
         } else {
-          errorMessage = `Failed to create game (Status: ${response.status}). Please try again.`;
+          // Provide specific error messages based on status codes
+          switch (response.status) {
+            case 400:
+              errorMessage = 'Invalid game creation request. Please check your inputs.';
+              break;
+            case 401:
+              errorMessage = 'Authentication error. Please log in again.';
+              break;
+            case 403:
+              errorMessage = 'You do not have permission to create games.';
+              break;
+            case 404:
+              errorMessage = 'Game creation service is currently unavailable.';
+              break;
+            case 409:
+              errorMessage = 'A game with this name already exists.';
+              break;
+            case 429:
+              errorMessage = 'Too many attempts. Please wait a moment and try again.';
+              break;
+            case 500:
+            case 502:
+            case 503:
+            case 504:
+              errorMessage = 'Server error. Please try again later.';
+              break;
+            default:
+              errorMessage = `Failed to create game (Status: ${response.status}). Please try again.`;
+          }
         }
         
         throw new Error(errorMessage);
       }
 
-      if (!data.id) {
-        throw new Error('No game ID received from server');
+      // Validate response data
+      if (!data?.id) {
+        throw new Error('Invalid response: Missing game ID');
       }
       
       // Handle success
@@ -174,27 +193,16 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
     } catch (error) {
       console.error('Game creation error:', error);
       
-      // Enhanced error message handling
       let errorMessage: string;
       
       if (error instanceof Error) {
         errorMessage = error.message;
-      } else if (error && typeof error === 'object') {
-        // Try to extract message from error object
-        const errorObj = error as any;
-        if (errorObj.message) {
-          errorMessage = errorObj.message;
-        } else if (errorObj.error?.message) {
-          errorMessage = errorObj.error.message;
-        } else if (typeof errorObj.error === 'string') {
-          errorMessage = errorObj.error;
-        } else {
-          errorMessage = 'An unexpected error occurred while creating the game.';
-        }
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = (error as { message: string }).message;
       } else if (typeof error === 'string') {
         errorMessage = error;
       } else {
-        errorMessage = 'An unexpected error occurred while creating the game.';
+        errorMessage = 'An unexpected error occurred while creating the game. Please try again.';
       }
       
       setError(errorMessage);
