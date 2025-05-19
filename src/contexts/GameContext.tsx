@@ -126,7 +126,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           created_by: currentUser.id,
           deleted: false,
           is_private: options.isPrivate || false,
-          has_password: Boolean(options.password)
+          has_password: Boolean(options.password),
+          score: { team1: 24, team2: 24 },
+          deck: [],
+          table_cards: [],
+          current_trick: [],
+          tricks: []
         })
         .select()
         .single();
