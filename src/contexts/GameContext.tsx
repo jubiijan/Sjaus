@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Game, GameState, GameVariant, Card as CardType, GameCreationOptions, Player, Message } from '../types/Game';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
+import { Game, GameState, GameVariant, Card as CardType, GameCreationOptions, Player, Message } from '../types/Game';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface GameContextType {
@@ -54,7 +54,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchQueue = useRef<boolean>(false);
   const autoRefreshInterval = useRef<NodeJS.Timeout | null>(null);
   const initialConnectionTimeout = useRef<NodeJS.Timeout | null>(null);
-  const operationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -116,39 +115,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // Create the game
+      // First create the game
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
-          name: options.name.trim(),
+          name: options.name,
           variant: options.variant,
           state: GameState.WAITING,
           created_by: currentUser.id,
-          deleted: false,
-          score: { team1: 24, team2: 24 },
-          deck: [],
-          table_cards: [],
-          current_trick: [],
-          tricks: []
+          deleted: false
         })
         .select()
         .single();
 
       if (gameError) throw gameError;
 
-      // If a password was provided, create the password entry
-      if (options.password) {
-        const { error: passwordError } = await supabase
-          .from('game_passwords')
-          .insert({
-            game_id: game.id,
-            password_hash: options.password // Note: In production, this should be hashed
-          });
-
-        if (passwordError) throw passwordError;
-      }
-
-      // Add creator as first player
+      // Then add the creator as the first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
@@ -262,83 +244,51 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
 
     try {
-      // Fetch all non-deleted games
-      const { data: gamesData, error: gamesError } = await supabase
+      // Fetch all non-deleted games with their players and messages
+      const { data: games, error: gamesError } = await supabase
         .from('games')
-        .select('*')
+        .select(`
+          *,
+          game_players (
+            user:users (
+              id,
+              name,
+              avatar
+            )
+          ),
+          game_messages (
+            id,
+            user:users (
+              id,
+              name
+            ),
+            text,
+            created_at
+          )
+        `)
         .eq('deleted', false)
         .order('created_at', { ascending: false });
 
       if (gamesError) throw gamesError;
 
-      // For each game, fetch players and messages separately
-      const transformedGames: Game[] = [];
-      
-      for (const game of gamesData || []) {
-        // Fetch players for this game
-        const { data: playersData, error: playersError } = await supabase
-          .from('game_players')
-          .select(`
-            *,
-            users:user_id (
-              id,
-              name,
-              avatar
-            )
-          `)
-          .eq('game_id', game.id);
-          
-        if (playersError) throw playersError;
-        
-        // Transform player data
-        const players: Player[] = (playersData || []).map(player => ({
-          id: player.users.id,
-          name: player.users.name,
-          avatar: player.users.avatar,
-          hand: player.hand || [],
-          tricks: player.tricks || [],
-          hasLeft: player.has_left
-        }));
-        
-        // Fetch messages for this game
-        const { data: messagesData, error: messagesError } = await supabase
-          .from('game_messages')
-          .select(`
-            id,
-            user_id,
-            text,
-            created_at,
-            users:user_id (
-              id,
-              name
-            )
-          `)
-          .eq('game_id', game.id)
-          .order('created_at', { ascending: true });
-          
-        if (messagesError) throw messagesError;
-        
-        // Transform message data
-        const messages: Message[] = (messagesData || []).map(message => ({
-          id: message.id,
-          playerId: message.user_id,
-          playerName: message.users.name,
-          text: message.text,
-          timestamp: message.created_at
-        }));
-        
-        // Construct the complete game object
-        transformedGames.push({
-          ...game,
-          players,
-          messages,
-          score: game.score || { team1: 24, team2: 24 },
-          currentTrick: game.current_trick || [],
-          tricks: game.tricks || [],
-          deck: game.deck || [],
-          tableCards: game.table_cards || []
-        });
-      }
+      // Transform the data to match the expected format
+      const transformedGames = (games || []).map(game => ({
+        ...game,
+        players: game.game_players.map((p: any) => ({
+          id: p.user.id,
+          name: p.user.name,
+          avatar: p.user.avatar,
+          hand: [],
+          tricks: []
+        })),
+        messages: game.game_messages.map((m: any) => ({
+          id: m.id,
+          playerId: m.user.id,
+          playerName: m.user.name,
+          text: m.text,
+          timestamp: m.created_at
+        }))
+      }));
 
       setGames(transformedGames);
       
