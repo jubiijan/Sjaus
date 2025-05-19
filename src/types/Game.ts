@@ -49,8 +49,9 @@ export interface Game {
   id: string;
   name: string;
   variant: GameVariant;
-  players: Player[];
   state: GameState;
+  created_by: string;
+  players: Player[];
   deck: Card[];
   tableCards?: Card[];
   trumpSuit: string | null;
@@ -62,4 +63,13 @@ export interface Game {
   score: { team1: number; team2: number };
   messages: Message[];
   createdAt: string;
+  deleted?: boolean;
+  deleted_at?: string;
+}
+
+export interface GameCreationOptions {
+  name: string;
+  variant: GameVariant;
+  isPrivate?: boolean;
+  password?: string;
 }
