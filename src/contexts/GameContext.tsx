@@ -115,7 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // First create the game
+      // Create the game
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
@@ -123,6 +123,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           variant: options.variant,
           state: GameState.WAITING,
           created_by: currentUser.id,
+          score: { team1: 24, team2: 24 },
+          deck: [],
+          table_cards: [],
+          current_trick: [],
+          tricks: [],
           deleted: false
         })
         .select()
@@ -130,7 +135,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gameError) throw gameError;
 
-      // Then add the creator as the first player
+      // Add creator as first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
@@ -169,7 +174,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (!checkError && existingPlayer) {
-        // Already a player, just subscribe
         subscribeToGame(gameId);
         await fetchGames();
         return;
@@ -244,12 +248,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
 
     try {
-      // Fetch all non-deleted games with their players and messages
       const { data: games, error: gamesError } = await supabase
         .from('games')
         .select(`
           *,
           game_players (
+            *,
             user:users (
               id,
               name,
@@ -271,15 +275,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gamesError) throw gamesError;
 
-      // Transform the data to match the expected format
       const transformedGames = (games || []).map(game => ({
         ...game,
         players: game.game_players.map((p: any) => ({
           id: p.user.id,
           name: p.user.name,
           avatar: p.user.avatar,
-          hand: [],
-          tricks: []
+          hand: p.hand || [],
+          tricks: p.tricks || [],
+          hasLeft: p.has_left
         })),
         messages: game.game_messages.map((m: any) => ({
           id: m.id,
@@ -287,7 +291,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           playerName: m.user.name,
           text: m.text,
           timestamp: m.created_at
-        }))
+        })),
+        score: game.score || { team1: 24, team2: 24 },
+        currentTrick: game.current_trick || [],
+        tricks: game.tricks || [],
+        deck: game.deck || [],
+        tableCards: game.table_cards || []
       }));
 
       setGames(transformedGames);
