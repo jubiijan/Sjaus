@@ -115,7 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // Create the game
+      // First create the game
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
@@ -135,7 +135,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gameError) throw gameError;
 
-      // Add creator as first player
+      // Then add the creator as the first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
@@ -146,7 +146,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           has_left: false
         });
 
-      if (playerError) throw playerError;
+      if (playerError) {
+        // If adding player fails, delete the game and throw error
+        await supabase.from('games').delete().eq('id', game.id);
+        throw playerError;
+      }
 
       await fetchGames();
       return game.id;
@@ -324,22 +328,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         schema: 'public',
         table: 'games',
         filter: `id=eq.${gameId}`
-      }, async () => {
-        await fetchGames();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'game_players',
-        filter: `game_id=eq.${gameId}`
-      }, async () => {
-        await fetchGames();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'game_messages',
-        filter: `game_id=eq.${gameId}`
       }, async () => {
         await fetchGames();
       })
