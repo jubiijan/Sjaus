@@ -111,35 +111,7 @@ Deno.serve(async (req) => {
 
         if (playerError) throw playerError;
 
-        // Get the created game with player info
-        const { data: fullGame, error: getError } = await supabaseClient
-          .from('games')
-          .select(`
-            *,
-            game_players(
-              user:users(
-                id,
-                name,
-                avatar
-              )
-            )
-          `)
-          .eq('id', game.id)
-          .single();
-
-        if (getError) throw getError;
-
-        // Transform to expected format
-        const transformedGame = {
-          ...fullGame,
-          players: fullGame.game_players.map(p => ({
-            id: p.user.id,
-            name: p.user.name,
-            avatar: p.user.avatar
-          }))
-        };
-
-        return new Response(JSON.stringify(transformedGame), {
+        return new Response(JSON.stringify({ id: game.id }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
