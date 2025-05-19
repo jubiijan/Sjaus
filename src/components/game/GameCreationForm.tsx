@@ -86,6 +86,13 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       setError('You must be logged in to create a game');
       return;
     }
+
+    // Validate environment variables
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      console.error('Missing required environment variables');
+      setError('Configuration error. Please contact support.');
+      return;
+    }
     
     try {
       setIsSubmitting(true);
@@ -115,24 +122,38 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         body: JSON.stringify(gameOptions)
       });
 
+      // Log the full response for debugging
+      console.log('Game creation response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
       const data = await response.json();
+      console.log('Game creation data:', data);
 
       if (!response.ok) {
-        // Extract error message from response
+        // Extract error message from response with detailed fallbacks
         let errorMessage: string;
         
-        if (data.error) {
-          errorMessage = typeof data.error === 'string' ? data.error : data.error.message || 'Failed to create game';
+        if (data.error && typeof data.error === 'object' && 'message' in data.error) {
+          errorMessage = data.error.message;
+        } else if (data.error && typeof data.error === 'string') {
+          errorMessage = data.error;
         } else if (data.message) {
           errorMessage = data.message;
         } else if (response.status === 429) {
           errorMessage = 'Too many attempts. Please wait a moment and try again.';
         } else if (response.status === 401) {
           errorMessage = 'Your session has expired. Please log in again.';
+        } else if (response.status === 403) {
+          errorMessage = 'You do not have permission to create games.';
+        } else if (response.status === 404) {
+          errorMessage = 'Game creation service is currently unavailable.';
         } else if (response.status >= 500) {
           errorMessage = 'Server error. Please try again later.';
         } else {
-          errorMessage = 'Failed to create game. Please try again.';
+          errorMessage = `Failed to create game (Status: ${response.status}). Please try again.`;
         }
         
         throw new Error(errorMessage);
@@ -153,17 +174,27 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
     } catch (error) {
       console.error('Game creation error:', error);
       
-      // Provide a more specific error message to the user
+      // Enhanced error message handling
       let errorMessage: string;
       
       if (error instanceof Error) {
         errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        // Try to extract message from error object
+        const errorObj = error as any;
+        if (errorObj.message) {
+          errorMessage = errorObj.message;
+        } else if (errorObj.error?.message) {
+          errorMessage = errorObj.error.message;
+        } else if (typeof errorObj.error === 'string') {
+          errorMessage = errorObj.error;
+        } else {
+          errorMessage = 'An unexpected error occurred while creating the game.';
+        }
       } else if (typeof error === 'string') {
         errorMessage = error;
-      } else if (error && typeof error === 'object' && 'message' in error) {
-        errorMessage = (error as { message: string }).message;
       } else {
-        errorMessage = 'An unexpected error occurred while creating the game. Please try again.';
+        errorMessage = 'An unexpected error occurred while creating the game.';
       }
       
       setError(errorMessage);
