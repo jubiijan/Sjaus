@@ -95,7 +95,8 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         name: finalGameName,
         variant: gameVariant,
         isPrivate,
-        password: usePassword ? password : undefined
+        password: usePassword ? password : undefined,
+        created_by: currentUser?.id // Add the creator's ID
       };
       
       // Create the game
