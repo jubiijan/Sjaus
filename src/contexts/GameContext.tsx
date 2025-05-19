@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Game, GameState, GameVariant, Card as CardType, GameCreationOptions } from '../types/Game';
+import { Game, GameState, GameVariant, Card as CardType, GameCreationOptions, Player, Message } from '../types/Game';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -125,8 +125,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           state: GameState.WAITING,
           created_by: currentUser.id,
           deleted: false,
-          is_private: options.isPrivate || false,
-          has_password: Boolean(options.password),
           score: { team1: 24, team2: 24 },
           deck: [],
           table_cards: [],
@@ -264,39 +262,36 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
 
     try {
+      // Fetch all non-deleted games
       const { data: gamesData, error: gamesError } = await supabase
         .from('games')
-        .select(`
-          *,
-          game_players!inner (
-            user_id,
-            hand,
-            tricks,
-            has_left,
-            users!inner (
-              id,
-              name,
-              avatar
-            )
-          ),
-          game_messages (
-            id,
-            user_id,
-            text,
-            created_at,
-            users!inner (
-              id,
-              name
-            )
-          )
-        `)
+        .select('*')
         .eq('deleted', false)
         .order('created_at', { ascending: false });
 
       if (gamesError) throw gamesError;
 
-      const transformedGames = (gamesData || []).map((game) => {
-        const players = game.game_players.map((player) => ({
+      // For each game, fetch players and messages separately
+      const transformedGames: Game[] = [];
+      
+      for (const game of gamesData || []) {
+        // Fetch players for this game
+        const { data: playersData, error: playersError } = await supabase
+          .from('game_players')
+          .select(`
+            *,
+            users:user_id (
+              id,
+              name,
+              avatar
+            )
+          `)
+          .eq('game_id', game.id);
+          
+        if (playersError) throw playersError;
+        
+        // Transform player data
+        const players: Player[] = (playersData || []).map(player => ({
           id: player.users.id,
           name: player.users.name,
           avatar: player.users.avatar,
@@ -304,16 +299,36 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           tricks: player.tricks || [],
           hasLeft: player.has_left
         }));
-
-        const messages = (game.game_messages || []).map((message) => ({
+        
+        // Fetch messages for this game
+        const { data: messagesData, error: messagesError } = await supabase
+          .from('game_messages')
+          .select(`
+            id,
+            user_id,
+            text,
+            created_at,
+            users:user_id (
+              id,
+              name
+            )
+          `)
+          .eq('game_id', game.id)
+          .order('created_at', { ascending: true });
+          
+        if (messagesError) throw messagesError;
+        
+        // Transform message data
+        const messages: Message[] = (messagesData || []).map(message => ({
           id: message.id,
-          playerId: message.users.id,
+          playerId: message.user_id,
           playerName: message.users.name,
           text: message.text,
           timestamp: message.created_at
         }));
-
-        return {
+        
+        // Construct the complete game object
+        transformedGames.push({
           ...game,
           players,
           messages,
@@ -322,8 +337,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           tricks: game.tricks || [],
           deck: game.deck || [],
           tableCards: game.table_cards || []
-        };
-      });
+        });
+      }
 
       setGames(transformedGames);
       
@@ -350,6 +365,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         schema: 'public',
         table: 'games',
         filter: `id=eq.${gameId}`
+      }, async () => {
+        await fetchGames();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'game_players',
+        filter: `game_id=eq.${gameId}`
+      }, async () => {
+        await fetchGames();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'game_messages',
+        filter: `game_id=eq.${gameId}`
       }, async () => {
         await fetchGames();
       })
@@ -414,7 +445,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const startGame = async (gameId: string): Promise<void> => {
     const { error } = await supabase
       .from('games')
-      .update({ state: GameState.BIDDING })
+      .update({ 
+        state: GameState.BIDDING,
+        current_player_id: currentUser?.id
+      })
       .eq('id', gameId);
 
     if (error) throw error;
