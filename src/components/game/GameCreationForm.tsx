@@ -87,13 +87,6 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         setError('You must be logged in to create a game');
         return;
       }
-
-      // Environment variables validation
-      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-        console.error('Missing required environment variables');
-        setError('Configuration error. Please contact support.');
-        return;
-      }
       
       setIsSubmitting(true);
       setError(null);
@@ -102,128 +95,25 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       const defaultGameName = currentUser?.name ? `${currentUser.name}'s Game` : 'New Game';
       const finalGameName = gameName.trim() || defaultGameName;
       
-      // Game creation options
-      const gameOptions = {
-        action: 'create',
-        userId: currentUser.id,
+      // Create the game using the context function
+      const gameId = await createGame({
         name: finalGameName,
         variant: gameVariant,
         isPrivate,
         password: usePassword ? password : undefined
-      };
-
-      // Log request details for debugging
-      console.debug('Creating game with options:', {
-        ...gameOptions,
-        password: usePassword ? '[REDACTED]' : undefined
       });
-
-      // Create the game using the edge function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify(gameOptions)
-      });
-
-      // Log response details for debugging
-      console.debug('Game creation response:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-
-      // Parse the response data
-      let data;
-      const contentType = response.headers.get('content-type');
-      try {
-        data = await response.text();
-        if (contentType?.includes('application/json')) {
-          data = JSON.parse(data);
-        }
-      } catch (parseError) {
-        console.error('Error parsing response:', parseError);
-        throw new Error(`Failed to parse server response: ${data}`);
-      }
-
-      // Handle non-200 responses
-      if (!response.ok) {
-        let errorMessage: string;
-        
-        // Try to extract error message from response
-        if (data?.error?.message) {
-          errorMessage = data.error.message;
-        } else if (data?.error && typeof data.error === 'string') {
-          errorMessage = data.error;
-        } else if (data?.message) {
-          errorMessage = data.message;
-        } else {
-          // Provide specific error messages based on status codes
-          switch (response.status) {
-            case 400:
-              errorMessage = 'Invalid game creation request. Please check your inputs.';
-              break;
-            case 401:
-              errorMessage = 'Authentication error. Please log in again.';
-              break;
-            case 403:
-              errorMessage = 'You do not have permission to create games.';
-              break;
-            case 404:
-              errorMessage = 'Game creation service is currently unavailable.';
-              break;
-            case 409:
-              errorMessage = 'A game with this name already exists.';
-              break;
-            case 429:
-              errorMessage = 'Too many attempts. Please wait a moment and try again.';
-              break;
-            case 500:
-            case 502:
-            case 503:
-            case 504:
-              errorMessage = 'Server error. Please try again later.';
-              break;
-            default:
-              errorMessage = `Failed to create game (Status: ${response.status}). Please try again.`;
-          }
-        }
-        
-        throw new Error(errorMessage);
-      }
-
-      // Validate response data
-      if (!data?.id) {
-        console.error('Invalid response data:', data);
-        throw new Error('Invalid response: Missing game ID');
-      }
       
       // Handle success
       setSuccess(true);
       
       // Notify parent component
       setTimeout(() => {
-        onGameCreated(data.id);
+        onGameCreated(gameId);
       }, 1000);
       
     } catch (error) {
       console.error('Game creation error:', error);
-      
-      let errorMessage: string;
-      
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (error && typeof error === 'object' && 'message' in error) {
-        errorMessage = (error as { message: string }).message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      } else {
-        errorMessage = 'An unexpected error occurred while creating the game. Please try again.';
-      }
-      
-      setError(errorMessage);
+      setError(error instanceof Error ? error.message : 'Failed to create game. Please try again.');
       setSuccess(false);
     } finally {
       setIsSubmitting(false);
