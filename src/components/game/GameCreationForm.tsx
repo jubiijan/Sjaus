@@ -98,8 +98,27 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         password: usePassword ? password : undefined
       };
       
-      // Create the game
-      const gameId = await createGame(gameOptions);
+      // Create the game using the edge function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          action: 'create',
+          userId: currentUser?.id,
+          name: finalGameName,
+          variant: gameVariant
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create game');
+      }
+
+      const { id: gameId } = await response.json();
       
       // Handle success
       setSuccess(true);
