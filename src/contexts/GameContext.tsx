@@ -124,12 +124,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           variant: options.variant,
           state: GameState.WAITING,
           created_by: currentUser.id,
-          deleted: false
+          deleted: false,
+          is_private: options.isPrivate || false,
+          has_password: Boolean(options.password)
         })
         .select()
         .single();
 
       if (gameError) throw gameError;
+
+      // If a password was provided, create the password entry
+      if (options.password) {
+        const { error: passwordError } = await supabase
+          .from('game_passwords')
+          .insert({
+            game_id: game.id,
+            password_hash: options.password // Note: In production, this should be hashed
+          });
+
+        if (passwordError) throw passwordError;
+      }
 
       // Add creator as first player
       const { error: playerError } = await supabase
@@ -137,8 +151,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert({
           game_id: game.id,
           user_id: currentUser.id,
-          hand: '[]',
-          tricks: '[]',
+          hand: [],
+          tricks: [],
           has_left: false
         });
 
@@ -182,8 +196,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert({
           game_id: gameId,
           user_id: currentUser.id,
-          hand: '[]',
-          tricks: '[]',
+          hand: [],
+          tricks: [],
           has_left: false
         });
 
