@@ -81,6 +81,11 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       setError('Please fix the errors in the form before creating a game');
       return;
     }
+
+    if (!currentUser?.id) {
+      setError('You must be logged in to create a game');
+      return;
+    }
     
     try {
       setIsSubmitting(true);
@@ -92,12 +97,14 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
       
       // Game creation options
       const gameOptions = {
+        action: 'create',
+        userId: currentUser.id,
         name: finalGameName,
         variant: gameVariant,
         isPrivate,
         password: usePassword ? password : undefined
       };
-      
+
       // Create the game using the edge function
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
         method: 'POST',
@@ -105,32 +112,38 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         },
-        body: JSON.stringify({
-          action: 'create',
-          userId: currentUser?.id,
-          name: finalGameName,
-          variant: gameVariant
-        })
+        body: JSON.stringify(gameOptions)
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create game');
+        // Extract error message from response or use a default message
+        const errorMessage = data.error || data.message || 'Failed to create game';
+        throw new Error(errorMessage);
       }
 
-      const { id: gameId } = await response.json();
+      if (!data.id) {
+        throw new Error('No game ID received from server');
+      }
       
       // Handle success
       setSuccess(true);
       
       // Notify parent component
       setTimeout(() => {
-        onGameCreated(gameId);
+        onGameCreated(data.id);
       }, 1000);
       
     } catch (error) {
-      console.error('Failed to create game:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create game. Please try again.');
+      console.error('Game creation error:', error);
+      
+      // Provide a more specific error message to the user
+      const errorMessage = error instanceof Error 
+        ? error.message
+        : 'An unexpected error occurred while creating the game. Please try again.';
+      
+      setError(errorMessage);
       setSuccess(false);
     } finally {
       setIsSubmitting(false);
