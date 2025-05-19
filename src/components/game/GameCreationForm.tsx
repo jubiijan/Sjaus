@@ -39,7 +39,7 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
   // Validate game name
   useEffect(() => {
     if (gameName.trim().length === 0) {
-      setNameValid(true); // Empty is valid as we'll use default
+      setNameValid(true);
       setNameError('');
     } else if (gameName.trim().length < 3) {
       setNameValid(false);
@@ -112,6 +112,12 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         password: usePassword ? password : undefined
       };
 
+      // Log request details for debugging
+      console.debug('Creating game with options:', {
+        ...gameOptions,
+        password: usePassword ? '[REDACTED]' : undefined
+      });
+
       // Create the game using the edge function
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/game-access`, {
         method: 'POST',
@@ -122,13 +128,24 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
         body: JSON.stringify(gameOptions)
       });
 
+      // Log response details for debugging
+      console.debug('Game creation response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
       // Parse the response data
       let data;
       const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        throw new Error('Server returned non-JSON response');
+      try {
+        data = await response.text();
+        if (contentType?.includes('application/json')) {
+          data = JSON.parse(data);
+        }
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error(`Failed to parse server response: ${data}`);
       }
 
       // Handle non-200 responses
@@ -179,6 +196,7 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onClose, onGameCrea
 
       // Validate response data
       if (!data?.id) {
+        console.error('Invalid response data:', data);
         throw new Error('Invalid response: Missing game ID');
       }
       
