@@ -115,7 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // First create the game without players
+      // First create the game without players field
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
@@ -129,13 +129,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           current_trick: [],
           tricks: [],
           deleted: false
+          // REMOVED: players: [currentUser.id] - this doesn't exist in the database!
         })
         .select()
         .single();
 
       if (gameError) throw gameError;
 
-      // Then add the creator as the first player in game_players table
+      // Then add the creator as the first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
