@@ -115,7 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // First create the game
+      // First create the game record
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
@@ -135,7 +135,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gameError) throw gameError;
 
-      // Then add the creator as the first player
+      // Then add the creator as the first player using the game_players table
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
@@ -178,12 +178,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (!checkError && existingPlayer) {
+        // Player is already in the game, just subscribe to updates
         subscribeToGame(gameId);
         await fetchGames();
         return;
       }
 
-      // Join the game
+      // Join the game by adding a record to game_players
       const { error: joinError } = await supabase
         .from('game_players')
         .insert({
@@ -213,6 +214,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
+      // Remove the player from the game by deleting their game_players record
       const { error: leaveError } = await supabase
         .from('game_players')
         .delete()
@@ -252,6 +254,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
 
     try {
+      // Fetch games with joined player data and messages
       const { data: games, error: gamesError } = await supabase
         .from('games')
         .select(`
@@ -279,6 +282,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gamesError) throw gamesError;
 
+      // Transform the database records into the Game type structure
       const transformedGames = (games || []).map(game => ({
         ...game,
         players: game.game_players.map((p: any) => ({
@@ -331,6 +335,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }, async () => {
         await fetchGames();
       })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'game_players',
+        filter: `game_id=eq.${gameId}`
+      }, async () => {
+        await fetchGames();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'game_messages',
+        filter: `game_id=eq.${gameId}`
+      }, async () => {
+        await fetchGames();
+      })
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setConnectionStatus('connected');
@@ -351,17 +371,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteGame = async (gameId: string): Promise<void> => {
-    const { error } = await supabase
-      .from('games')
-      .update({ 
-        deleted: true,
-        deleted_at: new Date().toISOString(),
-        state: GameState.COMPLETE
-      })
-      .eq('id', gameId);
+    try {
+      // Soft delete by updating the 'deleted' flag
+      const { error } = await supabase
+        .from('games')
+        .update({ 
+          deleted: true,
+          deleted_at: new Date().toISOString(),
+          state: GameState.COMPLETE
+        })
+        .eq('id', gameId);
 
-    if (error) throw error;
-    await fetchGames();
+      if (error) throw error;
+      
+      // Update local state
+      setGames(prevGames => prevGames.filter(game => game.id !== gameId));
+      if (currentGame?.id === gameId) {
+        setCurrentGame(null);
+      }
+    } catch (error) {
+      console.error('Error deleting game:', error);
+      throw error;
+    }
   };
 
   const deleteAllGames = async (): Promise<void> => {
@@ -369,6 +400,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
+      // Soft delete all games in 'waiting' state
       const { error: updateError } = await supabase
         .from('games')
         .update({ 
@@ -380,6 +412,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (updateError) throw updateError;
 
+      // Update local state
       await fetchGames();
     } catch (error) {
       console.error('Error deleting all games:', error);
@@ -390,30 +423,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const startGame = async (gameId: string): Promise<void> => {
-    const { error } = await supabase
-      .from('games')
-      .update({ 
-        state: GameState.BIDDING,
-        current_player_id: currentUser?.id
-      })
-      .eq('id', gameId);
+    try {
+      // Update game state to 'bidding' and set current player
+      const { error } = await supabase
+        .from('games')
+        .update({ 
+          state: GameState.BIDDING,
+          current_player_id: currentUser?.id
+        })
+        .eq('id', gameId);
 
-    if (error) throw error;
-    await fetchGames();
+      if (error) throw error;
+      
+      // Update local state
+      await fetchGames();
+    } catch (error) {
+      console.error('Error starting game:', error);
+      throw error;
+    }
   };
 
   const playCard = async (gameId: string, userId: string, card: CardType): Promise<void> => {
     console.log(`Player ${userId} played card ${card.suit} ${card.rank} in game ${gameId}`);
+    // Implementation would go here
     await fetchGames();
   };
 
   const declareTrump = async (gameId: string, userId: string, suit: string, length: number): Promise<void> => {
     console.log(`Player ${userId} declared ${suit} as trump with length ${length} in game ${gameId}`);
+    // Implementation would go here
     await fetchGames();
   };
 
   const passTrump = async (gameId: string, userId: string): Promise<void> => {
     console.log(`Player ${userId} passed on trump bidding in game ${gameId}`);
+    // Implementation would go here
     await fetchGames();
   };
 
@@ -424,6 +468,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
+      // Add a message to the game_messages table
       const { error: messageError } = await supabase
         .from('game_messages')
         .insert({
@@ -434,6 +479,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (messageError) throw messageError;
 
+      // Update local state
       await fetchGames();
     } catch (error) {
       console.error('Error sending message:', error);
