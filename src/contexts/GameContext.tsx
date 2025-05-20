@@ -115,7 +115,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // First create the game without any players array
+      // First create the game without players
       const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
@@ -135,7 +135,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (gameError) throw gameError;
 
-      // Then add the creator as the first player
+      // Then add the creator as the first player in game_players table
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
@@ -287,7 +287,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           avatar: p.user.avatar,
           hand: p.hand || [],
           tricks: p.tricks || [],
-          hasLeft: p.has_left
+          left: p.has_left
         })),
         messages: game.game_messages.map((m: any) => ({
           id: m.id,
