@@ -27,7 +27,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
-  // Fetch all users when admin status changes
   useEffect(() => {
     if (isAdmin) {
       fetchAllUsers();
@@ -51,7 +50,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Check active sessions and sets the user
     const initializeAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -67,7 +65,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         await fetchUser(session.user.id);
@@ -88,11 +85,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!user) {
+        setCurrentUser(null);
+        setIsAdmin(false);
+        throw new Error('User not found');
+      }
 
-      // Check if user is banned or locked
       if (user.status === 'banned') {
         await logout();
         throw new Error('Your account has been suspended. Please contact support for assistance.');
@@ -110,7 +111,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(user);
       setIsAdmin(user.role === 'admin');
 
-      // Update last login time
       await supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
@@ -129,7 +129,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
-      // Sign in with Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -143,7 +142,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('No user returned after login');
       }
 
-      // Fetch user data
       await fetchUser(data.user.id);
       
     } catch (error) {
@@ -167,7 +165,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAdmin(false);
       setUsers([]);
 
-      // Clear any stored auth data
       localStorage.removeItem('supabase.auth.token');
       Object.keys(localStorage).forEach(key => {
         if (key.startsWith('sb-') || key.includes('supabase')) {
@@ -203,7 +200,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (signUpError) throw signUpError;
       if (!user) throw new Error('No user returned after registration');
 
-      // Wait a brief moment to ensure the database trigger creates the user profile
       setTimeout(async () => {
         try {
           await fetchUser(user.id);
@@ -237,7 +233,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await fetchUser(userId);
       }
 
-      // Refresh users list if admin
       if (isAdmin) {
         await fetchAllUsers();
       }
@@ -274,7 +269,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(errorData.error || 'Failed to delete user');
       }
 
-      // Refresh users list if admin
       if (isAdmin) {
         await fetchAllUsers();
       }
@@ -299,7 +293,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lock_expires_at: null
     });
 
-    // If the banned user is currently logged in, force logout
     if (userId === currentUser?.id) {
       await logout();
     }
