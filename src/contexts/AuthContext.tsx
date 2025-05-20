@@ -88,6 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (error) throw error;
+      
       if (!user) {
         setCurrentUser(null);
         setIsAdmin(false);
@@ -135,7 +136,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        throw new Error('Invalid email or password');
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('Invalid email or password');
+        }
+        throw error;
       }
 
       if (!data.user) {
@@ -187,6 +191,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
 
+      // Check if user already exists
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existingUser) {
+        throw new Error('An account with this email already exists');
+      }
+
       const { data: { user }, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -197,7 +212,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       });
 
-      if (signUpError) throw signUpError;
+      if (signUpError) {
+        if (signUpError.message.includes('user_already_exists')) {
+          throw new Error('An account with this email already exists');
+        }
+        throw signUpError;
+      }
+
       if (!user) throw new Error('No user returned after registration');
 
       setTimeout(async () => {
@@ -210,7 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
     } catch (error) {
       console.error('Registration error:', error);
-      setError('Failed to register. Please try again.');
+      setError(error instanceof Error ? error.message : 'Failed to register. Please try again.');
       throw error;
     } finally {
       setIsLoading(false);
