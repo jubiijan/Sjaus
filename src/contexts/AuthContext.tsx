@@ -88,11 +88,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (error) throw error;
-      
+
       if (!user) {
         setCurrentUser(null);
         setIsAdmin(false);
-        throw new Error('User not found');
+        throw new Error('User profile not found. Please contact support.');
       }
 
       if (user.status === 'banned') {
